@@ -48,7 +48,6 @@ const startRecording = () => {
       try {
         await ffmpegService.convertAudioToMp3(
           originalFile,
-          originalFile.replace(".raw", ".mp3"),
         );
       } catch (error) {
         console.error(`❌ Error processing file ${rawFile}:`, error);
@@ -64,12 +63,11 @@ const convertInterruptedFiles = async () => {
     for (const file of files) {
       if (path.extname(file) === ".raw") {
         const rawFilePath = path.join(RECORDING_DIR, file);
-        const mp3FilePath = rawFilePath.replace(".raw", ".mp3");
 
         console.log(
           `🔄 Found interrupted recording: ${rawFilePath}, converting...`,
         );
-        await ffmpegService.convertAudioToMp3(rawFilePath, mp3FilePath);
+        await ffmpegService.convertAudioToMp3(rawFilePath);
       }
     }
   } catch (err) {

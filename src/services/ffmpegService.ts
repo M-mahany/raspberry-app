@@ -12,7 +12,8 @@ interface MetadataMedia {
 }
 
 export class ffmpegService {
-  static async convertAudioToMp3(rawFile: string, mp3File: string) {
+  static async convertAudioToMp3(rawFile: string) {
+    const mp3File = rawFile.replace('.raw', '.mp3')
     try {
       // Validate media file
       const { fileSize } = await this.getMediaMetadata(rawFile);
