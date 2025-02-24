@@ -9,8 +9,7 @@ dotenv.config();
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
-const RECORDING_INTERVAL = 10000;
-// 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 
 const startRecording = () => {
   const micInstance = mic({
@@ -46,9 +45,7 @@ const startRecording = () => {
       // Restart recording immediately
       startRecording();
       try {
-        await ffmpegService.convertAudioToMp3(
-          originalFile,
-        );
+        await ffmpegService.convertAudioToMp3(originalFile);
       } catch (error) {
         console.error(`❌ Error processing file ${rawFile}:`, error);
       }
@@ -75,5 +72,4 @@ const convertInterruptedFiles = async () => {
   }
 };
 
-// Ensure any unfinished files are converted before starting
-convertInterruptedFiles().then(startRecording);
+convertInterruptedFiles().then(startRecording)
