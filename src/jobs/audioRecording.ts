@@ -8,9 +8,8 @@ dotenv.config();
 
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
-const RECORDING_INTERVAL = 10000
-// 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 
+const RECORDING_INTERVAL = 10000; // Change back to 2 hours if needed
 
 const startRecording = () => {
   const micInstance = mic({
@@ -38,14 +37,17 @@ const startRecording = () => {
     console.error("⚠️ Mic error:", err);
   });
 
-  // Stop recording after 8 seconds
+  // Stop recording after the defined interval
   setTimeout(() => {
-    micInstance.stop(); // Stop the microphone
-    outputFileStream.end(async() => {
+    micInstance.stop();
+    outputFileStream.end(async () => {
       console.log(`✅ Finished recording: ${rawFile}`);
 
-      // Convert after the file stream is fully closed
-      await ffmpegService.convertAudioToMp3(rawFile, mp3File);
+      try {
+        await ffmpegService.convertAudioToMp3(rawFile, mp3File);
+      } catch (error) {
+        console.error(`❌ Error processing file ${rawFile}:`, error);
+      }
 
       // Restart recording immediately
       startRecording();
@@ -53,21 +55,23 @@ const startRecording = () => {
   }, RECORDING_INTERVAL);
 };
 
-const covertAnyInterupptedFile = () => {
-  fs.readdir(RECORDING_DIR, (err, files) => {
-    if (err) console.log(`Error Reading ${RECORDING_DIR}`);
-    files.forEach((file) => {
-      const isRawFile = file.split(".")[1] === "raw";
-      if (isRawFile) {
-        const filePath = path.join(RECORDING_DIR, file);
-        ffmpegService.convertAudioToMp3(
-          filePath,
-          filePath.replace(".raw", ".mp3"),
-        );
+const convertInterruptedFiles = async () => {
+  try {
+    const files = await fs.readdir(RECORDING_DIR);
+
+    for (const file of files) {
+      if (path.extname(file) === ".raw") {
+        const rawFilePath = path.join(RECORDING_DIR, file);
+        const mp3FilePath = rawFilePath.replace(".raw", ".mp3");
+
+        console.log(`🔄 Found interrupted recording: ${rawFilePath}, converting...`);
+        await ffmpegService.convertAudioToMp3(rawFilePath, mp3FilePath);
       }
-    });
-  });
+    }
+  } catch (err) {
+    console.error(`❌ Error reading directory ${RECORDING_DIR}:`, err);
+  }
 };
 
-covertAnyInterupptedFile()
-startRecording();
+// Ensure any unfinished files are converted before starting
+convertInterruptedFiles().then(startRecording);

@@ -1,57 +1,65 @@
 import ffmpeg from "fluent-ffmpeg";
-import fs from "fs";
+import fs from "fs/promises"; // Use promises for better async handling
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 
-// Set the paths manually
+// Set ffmpeg and ffprobe paths
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
 
-interface MetadataMedia{
-  fileSize:number
+interface MetadataMedia {
+  fileSize: number;
 }
 
 export class ffmpegService {
   static async convertAudioToMp3(rawFile: string, mp3File: string) {
- // Convert to MP3 using ffmpeg
- const {fileSize} = await this.getMediaMetadata(rawFile)
- if(!fileSize) return console.log(`File ${rawFile} is is corrupted will not be converted`)
- ffmpeg()
-   .input(rawFile)
-   .audioCodec("libmp3lame")
-   .format("mp3")
-   .on("end", () => {
-     console.log(`🎵 Converted to MP3: ${mp3File}`);
+    try {
+      // Validate media file
+      const { fileSize } = await this.getMediaMetadata(rawFile);
+      if (!fileSize) {
+        console.log(`⚠️ File ${rawFile} is corrupted, will not be converted.`);
+        return;
+      }
 
-     // Delete the raw file after conversion
-     fs.unlink(rawFile, (err) => {
-       if (err) console.error("⚠️ Error deleting raw file:", err);
-       else {
-         console.log(`🗑️ Deleted raw file: ${rawFile}`);
-       }
-     });
-   })
-   .on("error", (err) => {
-     console.error("⚠️ Error during conversion:", err);
-   })
-   .save(mp3File);
-   
-  }
-  static async getMediaMetadata(
-    fileInput: string,
-  ):Promise<MetadataMedia>{
-    return new Promise((resolve, reject) => {
-      const command = ffmpeg();
+      // Convert to MP3 using ffmpeg
+      return new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(rawFile)
+          .audioCodec("libmp3lame")
+          .format("mp3")
+          .on("end", async () => {
+            console.log(`🎵 Converted to MP3: ${mp3File}`);
 
-        // File URL or file path
-      command.input(fileInput);
-      
-      command.ffprobe((err, metadata) => {
-        if (err) {
-          return reject(new Error("Invalid media file."));
-        }
-        resolve({fileSize: metadata.format?.size||0})
+            try {
+              await fs.unlink(rawFile);
+              console.log(`🗑️ Deleted raw file: ${rawFile}`);
+            } catch (unlinkErr) {
+              console.error("⚠️ Error deleting raw file:", unlinkErr);
+            }
+
+            resolve();
+          })
+          .on("error", (err) => {
+            console.error("⚠️ Error during conversion:", err);
+            reject(err);
+          })
+          .save(mp3File);
       });
+    } catch (error) {
+      console.error("🚨 Conversion failed:", error);
+    }
+  }
+
+  static async getMediaMetadata(fileInput: string): Promise<MetadataMedia> {
+    return new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(fileInput)
+        .ffprobe((err, metadata) => {
+          if (err) {
+            return reject(new Error(`Invalid media file: ${fileInput}`));
+          }
+          resolve({ fileSize: metadata.format?.size || 0 });
+        });
     });
   }
 }
