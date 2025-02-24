@@ -8,6 +8,9 @@ dotenv.config();
 
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
+const RECORDING_INTERVAL = 10000
+// 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
 
 const startRecording = () => {
   const micInstance = mic({
@@ -23,7 +26,9 @@ const startRecording = () => {
   const rawFile = path.join(RECORDING_DIR, `${Date.now()}.raw`);
   const mp3File = rawFile.replace(".raw", ".mp3");
 
-  const outputFileStream = fs.createWriteStream(rawFile, { encoding: "binary" });
+  const outputFileStream = fs.createWriteStream(rawFile, {
+    encoding: "binary",
+  });
 
   micInputStream.pipe(outputFileStream);
   micInstance.start();
@@ -36,16 +41,33 @@ const startRecording = () => {
   // Stop recording after 8 seconds
   setTimeout(() => {
     micInstance.stop(); // Stop the microphone
-    outputFileStream.end(() => {
+    outputFileStream.end(async() => {
       console.log(`✅ Finished recording: ${rawFile}`);
 
       // Convert after the file stream is fully closed
-      ffmpegService.convertAudioToMp3(rawFile, mp3File);
+      await ffmpegService.convertAudioToMp3(rawFile, mp3File);
 
       // Restart recording immediately
       startRecording();
     });
-  }, 8000);
+  }, RECORDING_INTERVAL);
 };
 
+const covertAnyInterupptedFile = () => {
+  fs.readdir(RECORDING_DIR, (err, files) => {
+    if (err) console.log(`Error Reading ${RECORDING_DIR}`);
+    files.forEach((file) => {
+      const isRawFile = file.split(".")[1] === "raw";
+      if (isRawFile) {
+        const filePath = path.join(RECORDING_DIR, file);
+        ffmpegService.convertAudioToMp3(
+          filePath,
+          filePath.replace(".raw", ".mp3"),
+        );
+      }
+    });
+  });
+};
+
+covertAnyInterupptedFile()
 startRecording();
