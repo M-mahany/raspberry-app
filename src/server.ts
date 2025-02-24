@@ -9,7 +9,7 @@ app.get("/", (_req: Request, res: Response) => {
   res.send("Raspberry Pi App!");
 });
 
-app.get("/health", async (_req: Request, res: Response) => {
+app.get("/system-health", async (_req: Request, res: Response) => {
   try {
     const data = await SystemService.getSystemHealth();
     res.status(200).json(data);

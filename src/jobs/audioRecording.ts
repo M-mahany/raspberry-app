@@ -72,4 +72,4 @@ const convertInterruptedFiles = async () => {
   }
 };
 
-convertInterruptedFiles().then(startRecording)
+convertInterruptedFiles().then(startRecording);

@@ -6,25 +6,30 @@ interface SystemUsage {
   cpuUsage: string;
   memoryUsage: string;
   totalMemory: string;
+  usedMemory: string;
 }
 
 export class SystemService {
   static async getSystemHealth() {
     try {
-      const { cpuUsage, memoryUsage, totalMemory } =
+      const { cpuUsage, memoryUsage, totalMemory, usedMemory } =
         await this.getSystemUsage();
-      const { totalDisk, usedSpace, avaiableSpace, diskUsage } =
+      const { totalSpace, usedSpace, avaiableSpace, diskUsage } =
         await this.getDiskInfo();
+      const { cpuTemp, gpuTemp } = await this.getTemperatures();
       return {
         uptime: `${(os.uptime() / 3600).toFixed(2)} hours`,
         cpuUsage,
         cpuCount: os.cpus().length,
         memoryUsage,
         totalMemory,
-        totalDisk,
+        usedMemory,
+        totalSpace,
         usedSpace,
         avaiableSpace,
         diskUsage,
+        cpuTemp,
+        gpuTemp,
       };
     } catch (error) {
       throw new Error(`System Healt Error: ${error}`);
@@ -41,7 +46,8 @@ export class SystemService {
         resolve({
           cpuUsage: `${(cpuUsage * 100).toFixed(2) || 0}%`, // Convert to percentage
           memoryUsage: `${memoryUsage || 0}%`, // RAM usage in percentage
-          totalMemory: `${(os.totalmem() / 1024 ** 3).toFixed(2)}GB`,
+          totalMemory: `${(totalMemory / 1024 ** 3).toFixed(2)}GB`,
+          usedMemory: `${(usedMemory / 1024 ** 3).toFixed(2)}GB`,
         });
       });
     });
@@ -51,13 +57,26 @@ export class SystemService {
       const diskInfo = await si.fsSize();
       const disk = diskInfo[0];
       return {
-        totalDisk: `${(disk.size / 1024 ** 3).toFixed(2)} GB`,
+        totalSpace: `${(disk.size / 1024 ** 3).toFixed(2)} GB`,
         usedSpace: `${(disk.used / 1024 ** 3).toFixed(2)} GB`,
         avaiableSpace: `${(disk.available / 1024 ** 3).toFixed(2)} GB`,
         diskUsage: `${disk.use}%`,
       };
     } catch (error) {
       throw new Error(`Error retriving disk info ${error}`);
+    }
+  }
+  static async getTemperatures() {
+    try {
+      const cpuTemp = await si.cpuTemperature();
+      const gpuTemp = await si.graphics();
+
+      return {
+        cpuTemp: `${cpuTemp.main || "N/A"}°C`,
+        gpuTemp: `${gpuTemp?.controllers[0]?.temperatureGpu || "N/A"}°C`,
+      };
+    } catch (error) {
+      throw new Error("Error retrieiving CPU & GPU temperature");
     }
   }
 }
