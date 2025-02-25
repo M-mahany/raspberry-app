@@ -3,6 +3,8 @@ import mic from "mic";
 import dotenv from "dotenv";
 import path from "path";
 import { RecordingService } from "../services/recordingsService";
+import logger from "../utils/winston/logger";
+import { getFileName } from "../utils/helpers";
 
 dotenv.config();
 
@@ -36,17 +38,17 @@ const startRecording = () => {
 
   micInputStream.pipe(outputFileStream);
   micInstance.start();
-  console.log(`🎙️ Recording started: ${rawFile}`);
+  logger.info(`🎙️ Recording started: ${getFileName(rawFile)}`);
 
   micInputStream.on("error", (err) => {
-    console.error("⚠️ Mic error:", err);
+    logger.error("⚠️ Mic error:", err);
   });
 
   // Stop recording after the defined interval
   setTimeout(() => {
     micInstance.stop();
     outputFileStream.end(() => {
-      console.log(`✅ Finished recording: ${rawFile}`);
+      logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
       recordingFiles.delete(fileName);
       // Restart recording immediately
       startRecording();
@@ -58,20 +60,20 @@ const startRecording = () => {
 const convertInterruptedFiles = async () => {
   try {
     const files = await fs.readdir(RECORDING_DIR);
-    console.log("🔄 Cheking Interupted files...");
+    logger.info("🔄 Cheking Interupted files...");
 
     const filteredFiles = files.filter(
       (file) => path.extname(file) === ".raw" && !recordingFiles.has(file),
     );
     const conversionPromises = filteredFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
-      console.log(`🔄 Converting interrupted recording: ${rawFilePath}`);
+      logger.info(`🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`);
       await RecordingService.convertAndUploadToServer(rawFilePath);
     });
     if (filteredFiles?.length) {
       await Promise.all(conversionPromises);
     } else {
-      console.log("✅Checking complete! No Interuppted files found");
+      logger.info("✅ Checking complete! No Interuppted files found");
     }
   } catch (err) {
     console.error(`❌ Error reading directory ${RECORDING_DIR}:`, err);

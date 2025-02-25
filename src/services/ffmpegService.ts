@@ -2,6 +2,8 @@ import ffmpeg from "fluent-ffmpeg";
 import fs from "fs"; // Use promises for better async handling
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffprobeInstaller from "@ffprobe-installer/ffprobe";
+import logger from "../utils/winston/logger";
+import { getFileName } from "../utils/helpers";
 
 // Set ffmpeg and ffprobe paths
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -18,7 +20,7 @@ export class ffmpegService {
       // Validate media file
       const { fileSize } = await this.getMediaMetadata(rawFile);
       if (!fileSize) {
-        console.log(`⚠️ File ${rawFile} is corrupted, will not be converted.`);
+        logger.warn(`⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`);
         return null;
       }
 
@@ -29,22 +31,22 @@ export class ffmpegService {
           .audioCodec("libmp3lame")
           .format("mp3")
           .on("end", async () => {
-            console.log(`🎵 Converted to MP3: ${mp3File}`);
+            logger.info(`🎵 Converted to MP3: ${getFileName(mp3File)}`);
             try {
               fs.unlinkSync(rawFile);
             } catch (unlinkErr) {
-              console.error("⚠️ Error deleting raw file:", unlinkErr);
+              logger.error("⚠️ Error deleting raw file:", unlinkErr);
             }
             resolve(mp3File);
           })
           .on("error", (err) => {
-            console.error("⚠️ Error during conversion:", err);
+            logger.error("⚠️ Error during conversion:", err);
             reject(err);
           })
           .save(mp3File);
       });
     } catch (error: any) {
-      console.error("🚨 Conversion failed:", error?.message || error);
+      logger.error("🚨 Conversion failed:", error?.message || error);
     }
   }
 
@@ -57,10 +59,10 @@ export class ffmpegService {
             try {
               fs.unlinkSync(fileInput);
               return reject(
-                new Error(`Invalid media file: ${fileInput}, file is deleted`),
+                new Error(`Invalid media file: ${getFileName(fileInput)}, file is deleted`),
               );
             } catch (err) {
-              console.log(`error deleting corrupted file ${fileInput}`);
+              logger.error(`error deleting corrupted file ${getFileName(fileInput)}`);
             }
           }
           resolve({ fileSize: metadata.format?.size || 0 });

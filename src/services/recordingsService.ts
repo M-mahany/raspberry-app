@@ -3,11 +3,13 @@ import { serverAPI } from "../utils/config/voiceApiConfig";
 import fs from "fs";
 import { isAxiosError } from "axios";
 import { ffmpegService } from "./ffmpegService";
+import logger from "../utils/winston/logger";
+import { getFileName } from "../utils/helpers";
 
 export class RecordingService {
   static async uploadRecording(filePath: string): Promise<void> {
     try {
-      console.log(`⬆️ Uploading file: ${filePath} to server...`);
+      logger.info(`⬆️ Uploading file: ${getFileName(filePath)} to server...`);
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
 
@@ -17,10 +19,10 @@ export class RecordingService {
         },
       });
 
-      console.log(`✅ Uploaded ${filePath} successfully to the server:`);
+      logger.info(`✅ Uploaded ${getFileName(filePath)} successfully to the server:`);
       fs.unlink(filePath, (err) => {
         if (err) {
-          console.error(`Error deleting file after upload: ${err}`);
+          logger.error(`Error deleting file after upload: ${err}`);
         }
       });
     } catch (error) {
@@ -31,16 +33,16 @@ export class RecordingService {
         )
       ) {
         fs.unlink(filePath, (err) => {
-          console.error(`File: ${filePath}, already uploaded to the server`);
+          logger.error(`🚨File: ${getFileName(filePath)}, already uploaded to the server`);
           if (err) {
-            console.error(
-              `Error deleting file ${filePath} that has been already uploaded to server: ${err}`,
+            logger.error(
+              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
             );
           }
         });
-      }else{
-        console.error(
-          `Error uploading file ${filePath} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
+      } else {
+        logger.error(
+          `🚨 Error uploading file ${getFileName(filePath)} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
         );
       }
     }
@@ -52,8 +54,8 @@ export class RecordingService {
         await this.uploadRecording(mp3File);
       }
     } catch (error) {
-      console.log(
-        `🚨 Error Converting and uploading file:${rawFile}! ${error}`,
+      logger.error(
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
       );
     }
   }

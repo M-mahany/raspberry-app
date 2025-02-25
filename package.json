@@ -39,6 +39,7 @@
     "os-utils": "^0.0.14",
     "prettier": "^3.5.2",
     "systeminformation": "^5.25.11",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "winston": "^3.17.0"
   }
 }
