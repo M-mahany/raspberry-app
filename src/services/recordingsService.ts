@@ -31,17 +31,18 @@ export class RecordingService {
         )
       ) {
         fs.unlink(filePath, (err) => {
-          console.log(`File: ${filePath}, already uploaded to the server`);
+          console.error(`File: ${filePath}, already uploaded to the server`);
           if (err) {
             console.error(
               `Error deleting file ${filePath} that has been already uploaded to server: ${err}`,
             );
           }
         });
+      }else{
+        console.error(
+          `Error uploading file ${filePath} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
+        );
       }
-      console.log(
-        `Error uploading file ${filePath} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
-      );
     }
   }
   static async convertAndUploadToServer(rawFile: string) {
