@@ -13,7 +13,7 @@ fs.ensureDirSync(RECORDING_DIR);
 
 const RECORDING_INTERVAL = 0.5 * 60 * 1000;
 // 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-const CONVERSION_CHECK_INTERVAL = 0.5 * 60 * 1000;
+const CONVERSION_CHECK_INTERVAL = 0.5 * 30 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings
 
@@ -56,25 +56,46 @@ const startRecording = () => {
   }, RECORDING_INTERVAL);
 };
 
-const convertInterruptedFiles = async () => {
+const handleInterruptedFiles = async () => {
   try {
     const files = await fs.readdir(RECORDING_DIR);
     logger.info("🔄 Cheking Interupted files...");
 
-    const filteredFiles = files.filter(
+    // list of eligible .raw interrupted files
+    const filteredRawFiles = files.filter(
       (file) => path.extname(file) === ".raw" && !recordingFiles.has(file),
     );
-    const conversionPromises = filteredFiles.map(async (file) => {
+    // list of eligible .mp3 interrupted files
+    const filteredMp3Files = files.filter((file) => {
+      const fileNameWithoutExt = path.basename(file, ".mp3");
+      const rawFileName = `${fileNameWithoutExt}.raw`;
+      return path.extname(file) === ".mp3" && !recordingFiles.has(rawFileName);
+    });
+
+    const conversionPromises = filteredRawFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
       logger.info(
         `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
       );
       await RecordingService.convertAndUploadToServer(rawFilePath);
     });
-    if (filteredFiles?.length) {
+
+    const uploadingPromises = filteredMp3Files.map(async (file) => {
+      logger.info(
+        `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
+      );
+      const mp3FilePath = path.join(RECORDING_DIR, file);
+      await RecordingService.uploadRecording(mp3FilePath);
+    });
+
+    if (filteredRawFiles?.length) {
       await Promise.all(conversionPromises);
-    } else {
-      logger.info("✅ Checking complete! No Interuppted files found");
+    }
+    if (filteredMp3Files?.length) {
+      await Promise.all(uploadingPromises);
+    }
+    if (!filteredMp3Files?.length && !filteredRawFiles?.length) {
+      logger.info("✅ Checking complete! No Interrupted files found");
     }
   } catch (err) {
     console.error(`❌ Error reading directory ${RECORDING_DIR}:`, err);
@@ -82,7 +103,7 @@ const convertInterruptedFiles = async () => {
 };
 
 startRecording(); // Start recording first
-convertInterruptedFiles(); // Run it immediately once
+handleInterruptedFiles(); // Run it immediately once
 
 // Then schedule periodic checks
-setInterval(convertInterruptedFiles, CONVERSION_CHECK_INTERVAL);
+setInterval(handleInterruptedFiles, CONVERSION_CHECK_INTERVAL);

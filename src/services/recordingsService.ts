@@ -9,7 +9,6 @@ import { getFileName } from "../utils/helpers";
 export class RecordingService {
   static async uploadRecording(filePath: string): Promise<void> {
     try {
-      logger.info(`⬆️ Uploading file: ${getFileName(filePath)} to server...`);
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
 
@@ -24,7 +23,7 @@ export class RecordingService {
       );
       fs.unlink(filePath, (err) => {
         if (err) {
-          logger.error(`Error deleting file after upload: ${err}`);
+          logger.error(`🚨 Error deleting file after upload: ${err}`);
         }
       });
     } catch (error) {
@@ -57,11 +56,12 @@ export class RecordingService {
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
+      if (mp3File) {
+        logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
+        await this.uploadRecording(mp3File);
+      }
       if (currentRecordingFileSet) {
         currentRecordingFileSet?.delete(getFileName(rawFile));
-      }
-      if (mp3File) {
-        await this.uploadRecording(mp3File);
       }
     } catch (error) {
       logger.error(
