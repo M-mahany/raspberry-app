@@ -57,10 +57,10 @@ export class RecordingService {
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
+      if (currentRecordingFileSet) {
+        currentRecordingFileSet?.delete(getFileName(rawFile));
+      }
       if (mp3File) {
-        if (currentRecordingFileSet) {
-          currentRecordingFileSet?.delete(getFileName(rawFile));
-        }
         await this.uploadRecording(mp3File);
       }
     } catch (error) {

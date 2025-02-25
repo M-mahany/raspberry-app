@@ -13,7 +13,7 @@ fs.ensureDirSync(RECORDING_DIR);
 
 const RECORDING_INTERVAL = 0.5 * 60 * 1000;
 // 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-const CONVERSION_CHECK_INTERVAL = 0.5 * 60 * 60 * 1000;
+const CONVERSION_CHECK_INTERVAL = 0.5 * 60 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings
 
