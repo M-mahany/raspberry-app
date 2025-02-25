@@ -1,5 +1,5 @@
 import ffmpeg from "fluent-ffmpeg";
-import fs from "fs/promises"; // Use promises for better async handling
+import fs from "fs"; // Use promises for better async handling
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 
@@ -19,26 +19,23 @@ export class ffmpegService {
       const { fileSize } = await this.getMediaMetadata(rawFile);
       if (!fileSize) {
         console.log(`⚠️ File ${rawFile} is corrupted, will not be converted.`);
-        return;
+        return null;
       }
 
       // Convert to MP3 using ffmpeg
-      return new Promise<void>((resolve, reject) => {
+      return await new Promise<string | void>((resolve, reject) => {
         ffmpeg()
           .input(rawFile)
           .audioCodec("libmp3lame")
           .format("mp3")
           .on("end", async () => {
             console.log(`🎵 Converted to MP3: ${mp3File}`);
-
             try {
-              await fs.unlink(rawFile);
-              console.log(`🗑️ Deleted raw file: ${rawFile}`);
+              fs.unlinkSync(rawFile);
             } catch (unlinkErr) {
               console.error("⚠️ Error deleting raw file:", unlinkErr);
             }
-
-            resolve();
+            resolve(mp3File);
           })
           .on("error", (err) => {
             console.error("⚠️ Error during conversion:", err);
@@ -46,8 +43,8 @@ export class ffmpegService {
           })
           .save(mp3File);
       });
-    } catch (error) {
-      console.error("🚨 Conversion failed:", error);
+    } catch (error: any) {
+      console.error("🚨 Conversion failed:", error?.message || error);
     }
   }
 
@@ -57,7 +54,14 @@ export class ffmpegService {
         .input(fileInput)
         .ffprobe((err, metadata) => {
           if (err) {
-            return reject(new Error(`Invalid media file: ${fileInput}`));
+            try {
+              fs.unlinkSync(fileInput);
+              return reject(
+                new Error(`Invalid media file: ${fileInput}, file is deleted`),
+              );
+            } catch (err) {
+              console.log(`error deleting corrupted file ${fileInput}`);
+            }
           }
           resolve({ fileSize: metadata.format?.size || 0 });
         });

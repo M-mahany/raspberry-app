@@ -2,14 +2,18 @@ import fs from "fs-extra";
 import mic from "mic";
 import dotenv from "dotenv";
 import path from "path";
-import { ffmpegService } from "../services/ffmpegService";
+import { RecordingService } from "../services/recordingsService";
 
 dotenv.config();
 
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
-const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const RECORDING_INTERVAL = 1 * 60 * 1000;
+// 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const CONVERSION_CHECK_INTERVAL = 2 * 60 * 1000;
+
+const recordingFiles = new Set<string>(); // Stores active recordings
 
 const startRecording = () => {
   const micInstance = mic({
@@ -22,7 +26,9 @@ const startRecording = () => {
   });
 
   const micInputStream = micInstance.getAudioStream();
-  const rawFile = path.join(RECORDING_DIR, `${Date.now()}.raw`);
+  const fileName = `${Date.now()}.raw`;
+  recordingFiles.add(fileName);
+  const rawFile = path.join(RECORDING_DIR, fileName);
 
   const outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -39,16 +45,12 @@ const startRecording = () => {
   // Stop recording after the defined interval
   setTimeout(() => {
     micInstance.stop();
-    outputFileStream.end(async () => {
+    outputFileStream.end(() => {
       console.log(`✅ Finished recording: ${rawFile}`);
-      let originalFile = rawFile;
+      recordingFiles.delete(fileName);
       // Restart recording immediately
       startRecording();
-      try {
-        await ffmpegService.convertAudioToMp3(originalFile);
-      } catch (error) {
-        console.error(`❌ Error processing file ${rawFile}:`, error);
-      }
+      RecordingService.convertAndUploadToServer(rawFile);
     });
   }, RECORDING_INTERVAL);
 };
@@ -56,20 +58,26 @@ const startRecording = () => {
 const convertInterruptedFiles = async () => {
   try {
     const files = await fs.readdir(RECORDING_DIR);
+    console.log("🔄 Cheking Interupted files...");
 
-    for (const file of files) {
-      if (path.extname(file) === ".raw") {
-        const rawFilePath = path.join(RECORDING_DIR, file);
-
-        console.log(
-          `🔄 Found interrupted recording: ${rawFilePath}, converting...`,
-        );
-        await ffmpegService.convertAudioToMp3(rawFilePath);
-      }
+    const filteredFiles = files.filter(
+      (file) => path.extname(file) === ".raw" && !recordingFiles.has(file),
+    );
+    const conversionPromises = filteredFiles.map(async (file) => {
+      const rawFilePath = path.join(RECORDING_DIR, file);
+      console.log(`🔄 Converting interrupted recording: ${rawFilePath}`);
+      await RecordingService.convertAndUploadToServer(rawFilePath);
+    });
+    if (filteredFiles?.length) {
+      await Promise.all(conversionPromises);
+    } else {
+      console.log("✅Checking complete! No Interuppted files found");
     }
   } catch (err) {
     console.error(`❌ Error reading directory ${RECORDING_DIR}:`, err);
   }
 };
 
-convertInterruptedFiles().then(startRecording);
+setInterval(convertInterruptedFiles, CONVERSION_CHECK_INTERVAL);
+
+startRecording();
