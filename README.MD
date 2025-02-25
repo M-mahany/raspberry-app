@@ -124,4 +124,4 @@ Check if `logs/app.log` exists and is being written to correctly.
 
 ## License
 
-MIT License © 2025 Your Name
+MIT License © 2025 [Techrafter LTD](https://www.techrafter.com/)
