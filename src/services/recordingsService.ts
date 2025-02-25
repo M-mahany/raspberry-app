@@ -19,7 +19,9 @@ export class RecordingService {
         },
       });
 
-      logger.info(`✅ Uploaded ${getFileName(filePath)} successfully to the server:`);
+      logger.info(
+        `✅ Uploaded ${getFileName(filePath)} successfully to the server:`,
+      );
       fs.unlink(filePath, (err) => {
         if (err) {
           logger.error(`Error deleting file after upload: ${err}`);
@@ -33,7 +35,9 @@ export class RecordingService {
         )
       ) {
         fs.unlink(filePath, (err) => {
-          logger.error(`🚨File: ${getFileName(filePath)}, already uploaded to the server`);
+          logger.error(
+            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
+          );
           if (err) {
             logger.error(
               `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
@@ -47,10 +51,16 @@ export class RecordingService {
       }
     }
   }
-  static async convertAndUploadToServer(rawFile: string) {
+  static async convertAndUploadToServer(
+    rawFile: string,
+    currentRecordingFileSet?: Set<string>,
+  ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
       if (mp3File) {
+        if (currentRecordingFileSet) {
+          currentRecordingFileSet?.delete(getFileName(rawFile));
+        }
         await this.uploadRecording(mp3File);
       }
     } catch (error) {

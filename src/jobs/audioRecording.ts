@@ -11,9 +11,9 @@ dotenv.config();
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
-const RECORDING_INTERVAL = 1 * 60 * 1000;
+const RECORDING_INTERVAL = 0.5 * 60 * 1000;
 // 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-const CONVERSION_CHECK_INTERVAL = 2 * 60 * 1000;
+const CONVERSION_CHECK_INTERVAL = 0.5 * 60 * 60 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings
 
@@ -49,10 +49,9 @@ const startRecording = () => {
     micInstance.stop();
     outputFileStream.end(() => {
       logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
-      recordingFiles.delete(fileName);
       // Restart recording immediately
       startRecording();
-      RecordingService.convertAndUploadToServer(rawFile);
+      RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
     });
   }, RECORDING_INTERVAL);
 };
@@ -67,7 +66,9 @@ const convertInterruptedFiles = async () => {
     );
     const conversionPromises = filteredFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
-      logger.info(`🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`);
+      logger.info(
+        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
+      );
       await RecordingService.convertAndUploadToServer(rawFilePath);
     });
     if (filteredFiles?.length) {
@@ -80,6 +81,8 @@ const convertInterruptedFiles = async () => {
   }
 };
 
-setInterval(convertInterruptedFiles, CONVERSION_CHECK_INTERVAL);
+startRecording(); // Start recording first
+convertInterruptedFiles(); // Run it immediately once
 
-startRecording();
+// Then schedule periodic checks
+setInterval(convertInterruptedFiles, CONVERSION_CHECK_INTERVAL);

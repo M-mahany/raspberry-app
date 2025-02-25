@@ -20,7 +20,9 @@ export class ffmpegService {
       // Validate media file
       const { fileSize } = await this.getMediaMetadata(rawFile);
       if (!fileSize) {
-        logger.warn(`⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`);
+        logger.warn(
+          `⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`,
+        );
         return null;
       }
 
@@ -59,10 +61,14 @@ export class ffmpegService {
             try {
               fs.unlinkSync(fileInput);
               return reject(
-                new Error(`Invalid media file: ${getFileName(fileInput)}, file is deleted`),
+                new Error(
+                  `Invalid media file: ${getFileName(fileInput)}, file is deleted`,
+                ),
               );
             } catch (err) {
-              logger.error(`error deleting corrupted file ${getFileName(fileInput)}`);
+              logger.error(
+                `error deleting corrupted file ${getFileName(fileInput)}`,
+              );
             }
           }
           resolve({ fileSize: metadata.format?.size || 0 });
