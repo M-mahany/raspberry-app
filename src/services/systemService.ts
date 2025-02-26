@@ -1,6 +1,14 @@
 import os from "os";
 import osu from "os-utils";
 import si from "systeminformation";
+import dotenv from "dotenv";
+import simpleGit from "simple-git";
+import { exec } from "child_process";
+import logger from "../utils/winston/logger";
+
+const git = simpleGit();
+
+dotenv.config();
 
 interface SystemUsage {
   cpuUsage: string;
@@ -77,6 +85,58 @@ export class SystemService {
       };
     } catch (error) {
       throw new Error("Error retrieiving CPU & GPU temperature");
+    }
+  }
+
+  // Function to check and update the app from Github
+  static async checkForUpdates() {
+    try {
+      logger.info("🔍 Checking for updates...");
+
+      // Fetch latest changes
+      await git.fetch();
+
+      // Get local and remote commit hashes
+      const localCommit = await git.revparse(["HEAD"]);
+      const remoteCommit = await git.revparse(["origin/main"]);
+
+      if (localCommit !== remoteCommit) {
+        logger.info("🚀 New updates found! Pulling latest changes...");
+
+        // Pull latest code
+        await git.pull("origin", "main");
+
+        // Check if package.json changed (to reinstall dependencies)
+        const changedFiles = await git.diffSummary(["HEAD~1"]);
+        const needsNpmInstall = changedFiles.files.some((file) =>
+          file.file.includes("package.json"),
+        );
+
+        if (needsNpmInstall) {
+          logger.info("📦 Installing dependencies...");
+          exec("npm install", (err, stdout, stderr) => {
+            if (err) {
+              logger.error("❌ Failed to install dependencies:", stderr);
+              return;
+            }
+            logger.info("✅ Dependencies updated:", stdout);
+          });
+        }
+
+        // Restart the app using PM2
+        logger.info("♻️ Restarting the app...");
+        exec("pm2 restart ai-voice-app", (err, stdout, stderr) => {
+          if (err) {
+            logger.error("❌ Failed to restart app:", stderr);
+            return;
+          }
+          logger.info("✅ App restarted successfully:", stdout);
+        });
+      } else {
+        logger.info("✅ No updates found. The app is up to date.");
+      }
+    } catch (error) {
+      logger.error("❌ Error checking for updates:", error);
     }
   }
 }
