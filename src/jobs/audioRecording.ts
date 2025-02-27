@@ -5,15 +5,15 @@ import path from "path";
 import { RecordingService } from "../services/recordingsService";
 import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
+import { SystemService } from "../services/systemService";
 
 dotenv.config();
 
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
-const RECORDING_INTERVAL = 0.5 * 60 * 1000;
-// 2 * 60 * 60 * 1000; // 2 hours in milliseconds
-const CONVERSION_CHECK_INTERVAL = 0.5 * 30 * 1000;
+const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const CONVERSION_CHECK_INTERVAL = 3 * 60 * 60 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings
 
@@ -102,8 +102,13 @@ const handleInterruptedFiles = async () => {
   }
 };
 
-startRecording(); // Start recording first
-handleInterruptedFiles(); // Run it immediately once
+const runOnStart = async () => {
+  startRecording(); // Start recording first
+  await handleInterruptedFiles(); // Run it immediately once
+  SystemService.checkForUpdates(); // check for updates after all interrupted file handled to avoid interruption
+};
+
+runOnStart();
 
 // Then schedule periodic checks
 setInterval(handleInterruptedFiles, CONVERSION_CHECK_INTERVAL);

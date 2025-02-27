@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import "./jobs/audioRecording";
 import { SystemService } from "./services/systemService";
 import logger from "./utils/winston/logger";
+import './jobs/autoUpdateCron'
 import fs from "fs";
 import path from "path";
 import { convertLogsToJson } from "./utils/helpers";
@@ -41,6 +42,17 @@ app.get("/logs", async (_req: Request, res: Response) => {
     res
       .status(500)
       .json({ message: `Error reading logs: ${error?.message || error}` });
+  }
+});
+
+app.get("/update-status", async (_req: Request, res: Response) => {
+  try {
+    const {message, code} = await SystemService.checkForUpdates()
+    res.status(code).json({ message });
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ message: `Error updating device: ${error?.message || error}` });
   }
 });
 

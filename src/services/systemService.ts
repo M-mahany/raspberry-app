@@ -87,9 +87,7 @@ export class SystemService {
       throw new Error("Error retrieiving CPU & GPU temperature");
     }
   }
-
-  // Function to check and update the app from Github
-  static async checkForUpdates() {
+  static async checkForUpdates():Promise<{code:number,message:string}> {
     try {
       logger.info("🔍 Checking for updates...");
 
@@ -117,9 +115,10 @@ export class SystemService {
           exec("npm install", (err, stdout, stderr) => {
             if (err) {
               logger.error("❌ Failed to install dependencies:", stderr);
-              return;
+              return err
             }
             logger.info("✅ Dependencies updated:", stdout);
+            return true
           });
         }
 
@@ -128,15 +127,19 @@ export class SystemService {
         exec("pm2 restart ai-voice-app", (err, stdout, stderr) => {
           if (err) {
             logger.error("❌ Failed to restart app:", stderr);
-            return;
+            return err
           }
           logger.info("✅ App restarted successfully:", stdout);
+          return true
         });
+        return {code:200,message:"App updated successfully"}
       } else {
         logger.info("✅ No updates found. The app is up to date.");
+        return {code:200,message:"No updates found. The app is up to date."}
       }
     } catch (error) {
       logger.error("❌ Error checking for updates:", error);
+      return {code:500, message: `Error checking for updates: ${error}`}
     }
   }
 }
