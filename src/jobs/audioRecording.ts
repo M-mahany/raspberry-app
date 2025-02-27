@@ -12,7 +12,7 @@ dotenv.config();
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
-const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const CONVERSION_CHECK_INTERVAL = 3 * 60 * 60 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings

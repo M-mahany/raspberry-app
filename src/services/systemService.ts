@@ -5,8 +5,10 @@ import dotenv from "dotenv";
 import simpleGit from "simple-git";
 import { exec } from "child_process";
 import logger from "../utils/winston/logger";
+import util from "util";
 
 const git = simpleGit();
+const execPromise = util.promisify(exec);
 
 dotenv.config();
 
@@ -87,7 +89,7 @@ export class SystemService {
       throw new Error("Error retrieiving CPU & GPU temperature");
     }
   }
-  static async checkForUpdates():Promise<{code:number,message:string}> {
+  static async checkForUpdates(): Promise<{ code: number; message: string }> {
     try {
       logger.info("🔍 Checking for updates...");
 
@@ -112,34 +114,59 @@ export class SystemService {
 
         if (needsNpmInstall) {
           logger.info("📦 Installing dependencies...");
-          exec("npm install", (err, stdout, stderr) => {
-            if (err) {
-              logger.error("❌ Failed to install dependencies:", stderr);
-              return err
-            }
-            logger.info("✅ Dependencies updated:", stdout);
-            return true
-          });
+          try {
+            const { stdout } = await execPromise("npm install");
+            logger.info(`✅ Dependencies updated:\n${stdout}`);
+          } catch (err) {
+            logger.error(`❌ Failed to install dependencies: ${err}`);
+            return { code: 500, message: "Failed to install dependencies" };
+          }
         }
 
         // Restart the app using PM2
         logger.info("♻️ Restarting the app...");
-        exec("pm2 restart ai-voice-app", (err, stdout, stderr) => {
-          if (err) {
-            logger.error("❌ Failed to restart app:", stderr);
-            return err
-          }
-          logger.info("✅ App restarted successfully:", stdout);
-          return true
-        });
-        return {code:200,message:"App updated successfully"}
+        try {
+          const { stdout } = await execPromise("pm2 restart ai-voice-app");
+          logger.info(`✅ App restarted successfully:\n${stdout}`);
+        } catch (err) {
+          logger.error(`❌ Failed to restart app: ${err}`);
+          return { code: 500, message: "Failed to restart app" };
+        }
+
+        return { code: 200, message: "✅ App updated successfully" };
       } else {
         logger.info("✅ No updates found. The app is up to date.");
-        return {code:200,message:"No updates found. The app is up to date."}
+        return {
+          code: 200,
+          message: "No updates found. The app is up to date.",
+        };
       }
     } catch (error) {
-      logger.error("❌ Error checking for updates:", error);
-      return {code:500, message: `Error checking for updates: ${error}`}
+      logger.error(`❌ Error checking for updates: ${error}`);
+      return { code: 500, message: `Error checking for updates: ${error}` };
     }
+  }
+  static updateSystem(): Promise<{ code: number; message: string }> {
+    logger.info("Starting system update...");
+
+    return new Promise((resolve) => {
+      exec(
+        "sudo apt update && sudo apt upgrade -y",
+        (error, stdout, stderr) => {
+          if (error) {
+            logger.error(`❌ Error updating system: ${error.message}`);
+            return resolve({
+              code: 500,
+              message: `Error updating system: ${error.message}`,
+            });
+          }
+          if (stderr) {
+            logger.error(`⚠️ Warnings: ${stderr}`);
+          }
+          logger.info(`✅ Update completed:\n${stdout}`);
+          resolve({ code: 200, message: "✅ Update completed" });
+        },
+      );
+    });
   }
 }
