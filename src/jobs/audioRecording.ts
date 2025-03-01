@@ -90,10 +90,12 @@ const handleInterruptedFiles = async () => {
           `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
         );
         const mp3FilePath = path.join(RECORDING_DIR, file);
-        try{
+        try {
           await RecordingService.uploadRecording(mp3FilePath);
-        }catch(error:any){
-          logger.error(`❌ Error uploading file: ${getFileName(file)} - ${error?.message|| error}`);
+        } catch (error: any) {
+          logger.error(
+            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`,
+          );
         }
       }
     }

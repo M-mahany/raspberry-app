@@ -6,6 +6,7 @@ import "./jobs/autoUpdateCron";
 import fs from "fs";
 import path from "path";
 import { convertLogsToJson } from "./utils/helpers";
+import "./utils/socket/socketClient";
 
 const app = express();
 const port = 5001;
