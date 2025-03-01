@@ -80,19 +80,22 @@ const handleInterruptedFiles = async () => {
       await RecordingService.convertAndUploadToServer(rawFilePath);
     });
 
-    const uploadingPromises = filteredMp3Files.map(async (file) => {
-      logger.info(
-        `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
-      );
-      const mp3FilePath = path.join(RECORDING_DIR, file);
-      await RecordingService.uploadRecording(mp3FilePath);
-    });
-
     if (filteredRawFiles?.length) {
       await Promise.all(conversionPromises);
     }
+
     if (filteredMp3Files?.length) {
-      await Promise.all(uploadingPromises);
+      for (const file of filteredMp3Files) {
+        logger.info(
+          `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
+        );
+        const mp3FilePath = path.join(RECORDING_DIR, file);
+        try{
+          await RecordingService.uploadRecording(mp3FilePath);
+        }catch(error:any){
+          logger.error(`❌ Error uploading file: ${getFileName(file)} - ${error?.message|| error}`);
+        }
+      }
     }
     if (!filteredMp3Files?.length && !filteredRawFiles?.length) {
       logger.info("✅ Checking complete! No Interrupted files found");
