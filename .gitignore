@@ -6,3 +6,4 @@ pending_upload
 # Ignore log files
 /src/logs
 *.log
+.env
