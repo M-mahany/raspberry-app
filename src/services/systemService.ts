@@ -123,6 +123,16 @@ export class SystemService {
           }
         }
 
+        //Building app before restarting
+        logger.info("📦 Building app in process...");
+        try {
+          const { stdout } = await execPromise("npm run build");
+          logger.info(`✅ App successfully Built:\n${stdout}`);
+        } catch (err) {
+          logger.error(`❌ Failed to building application ${err}`);
+          return { code: 500, message: "Failed to building application" };
+        }
+
         // Restart the app using PM2
         logger.info("♻️ Restarting the app...");
         try {
