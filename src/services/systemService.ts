@@ -173,7 +173,7 @@ export class SystemService {
           if (stderr) {
             logger.error(`⚠️ Warnings: ${stderr}`);
           }
-          logger.info(`✅ Update completed:\n${stdout}`);
+          logger.info(`✅ System update completed:\n${stdout}`);
           resolve({ code: 200, message: "✅ Update completed" });
         },
       );
