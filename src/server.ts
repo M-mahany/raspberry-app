@@ -20,7 +20,7 @@ app.get("/", (_req: Request, res: Response) => {
 app.get("/system-health", async (_req: Request, res: Response) => {
   try {
     const data = await SystemService.getSystemHealth();
-    res.status(200).json(data);
+    res.status(200).json({ data });
   } catch (err) {
     res.status(500).json({ message: `Internal Server Error:${err}` });
   }
@@ -38,7 +38,7 @@ app.get("/logs", async (_req: Request, res: Response) => {
     // Convert log file into JSON format
     const logEntries = convertLogsToJson(logs);
 
-    res.status(200).json({ logs: logEntries });
+    res.status(200).json({ data: logEntries });
   } catch (error: any) {
     res
       .status(500)
@@ -46,25 +46,33 @@ app.get("/logs", async (_req: Request, res: Response) => {
   }
 });
 
-app.get("/update-app", async (_req: Request, res: Response) => {
+app.get("/update", async (_req: Request, res: Response) => {
+  let message1;
   try {
-    const { message, code } = await SystemService.checkForUpdates();
-    res.status(code).json({ message });
+    // update and upgrade system using `Sudo apt etc...`
+    try {
+      const { message, code } = await SystemService.updateSystem();
+      if (code === 200) {
+        message1 = message;
+      } else {
+        res.status(code).json({ message });
+        return;
+      }
+    } catch (error: any) {
+      res
+        .status(500)
+        .json({ message: `Error updating system: ${error?.message || error}` });
+      return;
+    }
+    const { message: message2, code: code2 } =
+      await SystemService.checkForUpdates();
+    res
+      .status(code2)
+      .json({ message: `${code2 === 200 ? message1 + "&" : ""} ${message2}` });
   } catch (error: any) {
     res
       .status(500)
       .json({ message: `Error updating device: ${error?.message || error}` });
-  }
-});
-
-app.get("/update-system", async (_req: Request, res: Response) => {
-  try {
-    const { message, code } = await SystemService.updateSystem();
-    res.status(code).json({ message });
-  } catch (error: any) {
-    res
-      .status(500)
-      .json({ message: `Error updating system: ${error?.message || error}` });
   }
 });
 
