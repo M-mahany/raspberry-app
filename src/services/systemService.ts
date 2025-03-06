@@ -79,14 +79,27 @@ export class SystemService {
   static async getTemperatures() {
     try {
       const cpuTemp = await si.cpuTemperature();
-      const gpuTemp = await si.graphics();
+
+      let gpuTemp = "N/A";
+      try {
+        const { stdout } = await execPromise("vcgencmd measure_temp");
+        const match = stdout.match(/temp=([\d.]+)'C/);
+        gpuTemp = match ? `${match[1]}°C` : "N/A";
+      } catch (gpuError: any) {
+        logger.warn(
+          "Failed to retrieve GPU temperature:",
+          gpuError?.message || gpuError,
+        );
+      }
 
       return {
-        cpuTemp: `${cpuTemp.main || "N/A"}°C`,
-        gpuTemp: `${gpuTemp?.controllers[0]?.temperatureGpu || "N/A"}°C`,
+        cpuTemp: `${cpuTemp?.main || "N/A"}°C`,
+        gpuTemp,
       };
-    } catch (error) {
-      throw new Error("Error retrieiving CPU & GPU temperature");
+    } catch (error: any) {
+      throw new Error(
+        `Error retrieving CPU & GPU temperature: ${error?.message || error}`,
+      );
     }
   }
   static async checkForUpdates(): Promise<{ code: number; message: string }> {

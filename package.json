@@ -4,8 +4,8 @@
   "main": "index.js",
   "scripts": {
     "build": "rm -rf ./build && npx tsc",
-    "start": "node build/server.js",
-    "dev": "nodemon src/server.ts",
+    "start": "node build/app.js",
+    "dev": "nodemon src/app.ts",
     "prettier": "prettier --write src/**/*.ts"
   },
   "keywords": [],

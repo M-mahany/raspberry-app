@@ -165,7 +165,7 @@ POST /update-system
  ┃ ┃ ┣ 📂winston
  ┃ ┃ ┃ ┗ 📜logger.ts
  ┃ ┃ ┗ 📜helpers.ts
- ┃ ┗ 📜server.ts
+ ┃ ┗ app.ts
  ┣ 📜.env
  ┣ 📜.gitignore
  ┣ 📜package-lock.json
