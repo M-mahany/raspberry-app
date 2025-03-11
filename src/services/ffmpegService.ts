@@ -62,6 +62,7 @@ export class ffmpegService {
         .input(fileInput)
         .ffprobe((err, metadata) => {
           if (err) {
+            console.log(err)
             try {
               fs.unlinkSync(fileInput);
               return reject(
