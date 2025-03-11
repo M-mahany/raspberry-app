@@ -1,13 +1,18 @@
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs"; // Use promises for better async handling
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import ffprobeInstaller from "@ffprobe-installer/ffprobe";
+// import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+// import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
 
+// previously but was not working on pi
+// ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+// ffmpeg.setFfprobePath(ffprobeInstaller.path);
+
 // Set ffmpeg and ffprobe paths
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-ffmpeg.setFfprobePath(ffprobeInstaller.path);
+ffmpeg.setFfmpegPath("/usr/bin/ffmpeg");
+ffmpeg.setFfprobePath("/usr/bin/ffprobe");
+
 
 interface MetadataMedia {
   fileSize: number;
