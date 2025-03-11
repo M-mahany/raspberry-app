@@ -51,6 +51,7 @@ export class ffmpegService {
           .save(mp3File);
       });
     } catch (error: any) {
+      console.log(error)
       logger.error("🚨 Conversion failed:", error?.message || error);
     }
   }
