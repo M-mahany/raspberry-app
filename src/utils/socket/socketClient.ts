@@ -8,9 +8,6 @@ const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
     accessToken: process.env.ACCESS_TOKEN,
   },
-  reconnection: true, // Enable auto-reconnect
-  reconnectionAttempts: 5, // Retry 5 times before giving up
-  reconnectionDelay: 3000, // Wait 3 seconds between retries
 });
 
 socket.on("connect", () => {
