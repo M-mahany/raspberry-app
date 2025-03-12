@@ -64,11 +64,15 @@ export class ffmpegService {
                   `Invalid media file: ${getFileName(fileInput)}, file is deleted. Error:${err}`,
                 ),
               );
-            } catch (err) {
+            } catch (err:any) {
               logger.error(
                 `error deleting corrupted file ${getFileName(fileInput)}`,
               );
-              throw new Error(`error deleting corrupted file ${getFileName(fileInput)}`)
+              return reject(
+                new Error(
+                  `Error deleting corrupted file ${getFileName(fileInput)}: ${err?.message|| err}`
+                )
+              );
             }
           }
           resolve({ fileSize: metadata.format?.size || 0 });
