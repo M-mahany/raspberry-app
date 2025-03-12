@@ -36,19 +36,18 @@ export class ffmpegService {
             try {
               fs.unlinkSync(rawFile);
             } catch (unlinkErr) {
-              logger.error("⚠️ Error deleting raw file:", unlinkErr);
+              logger.error(`⚠️ Error deleting raw file: ${unlinkErr}`);
             }
             resolve(mp3File);
           })
           .on("error", (err) => {
-            logger.error("⚠️ Error during conversion:", err);
+            logger.error(`⚠️ Error during conversion: ${err}`);
             reject(err);
           })
           .save(mp3File);
       });
     } catch (error: any) {
-      console.log(error)
-      logger.error("🚨 Conversion failed:", error?.message || error);
+      logger.error(`🚨 Conversion failed: ${error?.message || error}`);
     }
   }
 
@@ -58,18 +57,18 @@ export class ffmpegService {
         .input(fileInput)
         .ffprobe((err, metadata) => {
           if (err) {
-            console.log(err)
             try {
               fs.unlinkSync(fileInput);
               return reject(
                 new Error(
-                  `Invalid media file: ${getFileName(fileInput)}, file is deleted`,
+                  `Invalid media file: ${getFileName(fileInput)}, file is deleted. Error:${err}`,
                 ),
               );
             } catch (err) {
               logger.error(
                 `error deleting corrupted file ${getFileName(fileInput)}`,
               );
+              throw new Error(`error deleting corrupted file ${getFileName(fileInput)}`)
             }
           }
           resolve({ fileSize: metadata.format?.size || 0 });

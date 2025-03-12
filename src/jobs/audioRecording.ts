@@ -25,6 +25,7 @@ const startRecording = () => {
     bitwidth: "16",
     encoding: "signed-integer",
     fileType: "raw",
+    debug:true
   });
 
   const micInputStream = micInstance.getAudioStream();
@@ -41,7 +42,7 @@ const startRecording = () => {
   logger.info(`🎙️ Recording started: ${getFileName(rawFile)}`);
 
   micInputStream.on("error", (err) => {
-    logger.error("⚠️ Mic error:", err);
+    logger.error(`⚠️ Mic error: ${err}`);
   });
 
   // Stop recording after the defined interval

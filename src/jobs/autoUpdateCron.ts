@@ -8,6 +8,6 @@ cron.schedule("0 3 */7 * *", async () => {
   try {
     await SystemService.checkForUpdates();
   } catch (error) {
-    logger.error("Error running scheduled auto update:", error);
+    logger.error(`Error running scheduled auto update:" ${error}`);
   }
 });
