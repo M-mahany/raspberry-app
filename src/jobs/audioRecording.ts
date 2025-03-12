@@ -25,7 +25,7 @@ const startRecording = () => {
     bitwidth: "16",
     encoding: "signed-integer",
     fileType: "raw",
-    debug:true
+    debug: true,
   });
 
   const micInputStream = micInstance.getAudioStream();

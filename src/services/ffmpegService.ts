@@ -8,7 +8,6 @@ import { getFileName } from "../utils/helpers";
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 ffmpeg.setFfprobePath(ffprobeInstaller.path);
 
-
 interface MetadataMedia {
   fileSize: number;
 }
@@ -64,14 +63,14 @@ export class ffmpegService {
                   `Invalid media file: ${getFileName(fileInput)}, file is deleted. Error:${err}`,
                 ),
               );
-            } catch (err:any) {
+            } catch (err: any) {
               logger.error(
                 `error deleting corrupted file ${getFileName(fileInput)}`,
               );
               return reject(
                 new Error(
-                  `Error deleting corrupted file ${getFileName(fileInput)}: ${err?.message|| err}`
-                )
+                  `Error deleting corrupted file ${getFileName(fileInput)}: ${err?.message || err}`,
+                ),
               );
             }
           }
