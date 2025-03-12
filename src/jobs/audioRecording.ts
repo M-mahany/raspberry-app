@@ -19,10 +19,12 @@ const recordingFiles = new Set<string>(); // Stores active recordings
 
 const startRecording = () => {
   const micInstance = mic({
-    rate: '16000',
-    channels: '1',
-    debug: true,
-    exitOnSilence: 6
+    device: "plughw:2,0",
+    rate: "16000",
+    channels: "1",
+    bitwidth: "16",
+    encoding: "signed-integer",
+    fileType: "raw",
   });
 
   const micInputStream = micInstance.getAudioStream();
