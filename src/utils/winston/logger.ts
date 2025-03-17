@@ -2,7 +2,7 @@ import winston from "winston";
 import path from "path";
 
 // Define log file paths
-export const logsDir = path.join(__dirname, "../../logs");
+export const logsDir = "./logs";
 
 const logger = winston.createLogger({
   level: "info", // Default log level

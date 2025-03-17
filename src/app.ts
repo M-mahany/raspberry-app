@@ -1,17 +1,14 @@
 import express, { Request, Response } from "express";
 import "./jobs/audioRecording";
 import { SystemService } from "./services/systemService";
-import logger from "./utils/winston/logger";
+import logger, { logsDir } from "./utils/winston/logger";
 import "./jobs/autoUpdateCron";
 import fs from "fs";
-import path from "path";
 import { convertLogsToJson } from "./utils/helpers";
 import "./utils/socket/socketClient";
 
 const app = express();
 const port = 5001;
-
-const logsDir = path.join(__dirname, "./logs/app.log");
 
 app.get("/", (_req: Request, res: Response) => {
   res.send("Raspberry Pi App!");
@@ -28,12 +25,13 @@ app.get("/system-health", async (_req: Request, res: Response) => {
 
 app.get("/logs", async (_req: Request, res: Response) => {
   try {
-    if (!fs.existsSync(logsDir)) {
+    const logFile = `${logsDir}/app.log`;
+    if (!fs.existsSync(logFile)) {
       res.status(404).json({ message: "Log file not found" });
       return;
     }
 
-    const logs = await fs.promises.readFile(logsDir, "utf-8");
+    const logs = await fs.promises.readFile(logFile, "utf-8");
 
     // Convert log file into JSON format
     const logEntries = convertLogsToJson(logs);
