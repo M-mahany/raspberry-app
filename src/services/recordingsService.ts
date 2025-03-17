@@ -5,6 +5,7 @@ import { isAxiosError } from "axios";
 import { ffmpegService } from "./ffmpegService";
 import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
+import { execSync } from "child_process";
 
 export class RecordingService {
   static async uploadRecording(filePath: string): Promise<void> {
@@ -66,6 +67,19 @@ export class RecordingService {
     } catch (error) {
       logger.error(
         `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
+      );
+    }
+  }
+  static async killExistingRecordings() {
+    try {
+      const result = execSync("pgrep -af arecord").toString();
+      if (result) {
+        logger.warn("⚠️ Detected active arecord process! Killing it...");
+        execSync("pkill -9 arecord");
+      }
+    } catch (error) {
+      logger.error(
+        `🚨 Error checking and killing previous mic process: ${error}`,
       );
     }
   }

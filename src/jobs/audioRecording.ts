@@ -48,13 +48,18 @@ const startRecording = () => {
   // Stop recording after the defined interval
   setTimeout(() => {
     micInstance.stop();
-    outputFileStream.end(() => {
-      logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
-      // Restart recording immediately
-      startRecording();
-      RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
-    });
   }, RECORDING_INTERVAL);
+
+  micInputStream.on("stopComplete", () => {
+    logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
+
+    // double check if the previous stop has completely killed the porcess
+    RecordingService.killExistingRecordings();
+    // Restart recording immediately
+    startRecording();
+
+    RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
+  });
 };
 
 const handleInterruptedFiles = async () => {
