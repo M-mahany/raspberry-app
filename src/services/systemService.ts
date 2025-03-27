@@ -102,6 +102,18 @@ export class SystemService {
       );
     }
   }
+
+  static async restartApp() {
+    // Restart the app using PM2
+    logger.info("♻️ Restarting the app...");
+    try {
+      const { stdout } = await execPromise("pm2 restart ai-voice-app");
+      logger.info(`✅ App restarted successfully:\n${stdout}`);
+    } catch (err) {
+      logger.error(`❌ Failed to restart app: ${err}`);
+    }
+  }
+
   static async checkForUpdates(): Promise<{ code: number; message: string }> {
     try {
       logger.info("🔍 Checking for updates...");
@@ -146,15 +158,7 @@ export class SystemService {
           return { code: 500, message: "Failed to building application" };
         }
 
-        // Restart the app using PM2
-        logger.info("♻️ Restarting the app...");
-        try {
-          const { stdout } = await execPromise("pm2 restart ai-voice-app");
-          logger.info(`✅ App restarted successfully:\n${stdout}`);
-        } catch (err) {
-          logger.error(`❌ Failed to restart app: ${err}`);
-          return { code: 500, message: "Failed to restart app" };
-        }
+        this.restartApp();
 
         return { code: 200, message: "✅ App updated successfully" };
       } else {
