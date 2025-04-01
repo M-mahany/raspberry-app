@@ -4,7 +4,7 @@ import fs from "fs";
 import { isAxiosError } from "axios";
 import { ffmpegService } from "./ffmpegService";
 import logger from "../utils/winston/logger";
-import { getFileName } from "../utils/helpers";
+import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
 export class RecordingService {
@@ -12,7 +12,7 @@ export class RecordingService {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
-
+      formData.append('timeZone', getTimeZone());
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
           ...formData.getHeaders(),
