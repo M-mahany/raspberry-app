@@ -6,6 +6,7 @@ import { RecordingService } from "../services/recordingsService";
 import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
 import { SystemService } from "../services/systemService";
+import dayjs from "dayjs";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ const startRecording = () => {
   const fileName = `${Date.now()}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
+  const now = dayjs();
 
   const outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -45,20 +47,35 @@ const startRecording = () => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
+  // Calculate time until next 12:00 AM
+  const nextMidnight = now.endOf("day");
+  const timeUntilMidnight = nextMidnight.diff(now);
+
+  // Determine the shorter interval: 2 hours or time until midnight
+  const stopInterval = Math.min(RECORDING_INTERVAL, timeUntilMidnight);
+
   // Stop recording after the defined interval
   setTimeout(() => {
     micInstance.stop();
-  }, RECORDING_INTERVAL);
+  }, stopInterval);
 
   micInputStream.on("stopComplete", () => {
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
 
     // double check if the previous stop has completely killed the porcess
     RecordingService.killExistingRecordings();
-    // Restart recording immediately
-    startRecording();
-
     RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
+
+    // If it's midnight, delay restart by 1 second
+    if (dayjs().hour() === 0) {
+      logger.info(
+        "🌙 It's midnight! Waiting 1 second before starting a new session.",
+      );
+      setTimeout(startRecording, 1000);
+    } else {
+      // Restart immediately for regular intervals
+      startRecording();
+    }
   });
 };
 

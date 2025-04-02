@@ -1,10 +1,10 @@
 import dayjs from "dayjs";
 import path from "path";
-import utc from 'dayjs/plugin/utc'
-import timezone from 'dayjs/plugin/timezone'
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
-dayjs.extend(utc)
-dayjs.extend(timezone)
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export const getFileName = (filePath: string) => {
   return path.basename(filePath);
@@ -27,6 +27,6 @@ export const convertLogsToJson = (logs: string) => {
   return logEntries;
 };
 
-export const getTimeZone=()=>{
-  return dayjs.tz.guess()
-}
+export const getTimeZone = () => {
+  return dayjs.tz.guess();
+};

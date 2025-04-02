@@ -12,7 +12,7 @@ export class RecordingService {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
-      formData.append('timeZone', getTimeZone());
+      formData.append("timeZone", getTimeZone());
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
           ...formData.getHeaders(),
