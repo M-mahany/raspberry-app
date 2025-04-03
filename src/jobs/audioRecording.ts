@@ -59,11 +59,11 @@ const startRecording = () => {
     micInstance.stop();
   }, stopInterval);
 
-  micInputStream.on("stopComplete", () => {
+  micInputStream.on("stopComplete", async() => {
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
 
     // double check if the previous stop has completely killed the porcess
-    RecordingService.killExistingRecordings();
+    await RecordingService.killExistingRecordings();
     RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
 
     // If it's midnight, delay restart by 1 second
