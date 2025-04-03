@@ -59,7 +59,7 @@ const startRecording = () => {
     micInstance.stop();
   }, stopInterval);
 
-  micInputStream.on("stopComplete", async() => {
+  micInputStream.on("stopComplete", async () => {
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
 
     // double check if the previous stop has completely killed the porcess
