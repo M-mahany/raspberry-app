@@ -28,10 +28,11 @@ export const convertLogsToJson = (
       return { raw: line };
     });
 
+  const totalLogs = logEntries?.length ?? 0;
   const startIndex = (page - 1) * limit;
   const paginatedLogs = logEntries.slice(startIndex, startIndex + limit);
 
-  return paginatedLogs;
+  return { logs: paginatedLogs, total: totalLogs, page, limit };
 };
 
 export const getTimeZone = () => {
