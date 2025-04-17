@@ -23,7 +23,12 @@ app.get("/system-health", async (_req: Request, res: Response) => {
   }
 });
 
-app.get("/logs", async (_req: Request, res: Response) => {
+app.get("/logs", async (req: Request, res: Response) => {
+  const { page = 1, limit = 500 } = req.body;
+
+  const pageNumber = parseInt(page);
+  const perPage = parseInt(limit);
+
   try {
     const logFile = `${logsDir}/app.log`;
     if (!fs.existsSync(logFile)) {
@@ -34,7 +39,7 @@ app.get("/logs", async (_req: Request, res: Response) => {
     const logs = await fs.promises.readFile(logFile, "utf-8");
 
     // Convert log file into JSON format
-    const logEntries = convertLogsToJson(logs);
+    const logEntries = convertLogsToJson(logs, pageNumber, perPage);
 
     res.status(200).json({ data: logEntries });
   } catch (error: any) {

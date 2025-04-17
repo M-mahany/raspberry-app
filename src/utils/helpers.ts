@@ -10,7 +10,11 @@ export const getFileName = (filePath: string) => {
   return path.basename(filePath);
 };
 
-export const convertLogsToJson = (logs: string) => {
+export const convertLogsToJson = (
+  logs: string,
+  page: number,
+  limit: number,
+) => {
   const logEntries = logs
     .split("\n")
     .filter((line) => line.trim() !== "")
@@ -24,7 +28,10 @@ export const convertLogsToJson = (logs: string) => {
       return { raw: line };
     });
 
-  return logEntries;
+  const startIndex = (page - 1) * limit;
+  const paginatedLogs = logEntries.slice(startIndex, startIndex + limit);
+
+  return paginatedLogs;
 };
 
 export const getTimeZone = () => {
