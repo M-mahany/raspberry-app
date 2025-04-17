@@ -24,10 +24,10 @@ app.get("/system-health", async (_req: Request, res: Response) => {
 });
 
 app.get("/logs", async (req: Request, res: Response) => {
-  const { page = 1, limit = 500 } = req.body;
+  const { page = 1, limit = 500 } = req.query;
 
-  const pageNumber = parseInt(page);
-  const perPage = parseInt(limit);
+  const pageNumber = Number(page);
+  const perPage = Number(limit);
 
   try {
     const logFile = `${logsDir}/app.log`;
