@@ -72,15 +72,46 @@ export class RecordingService {
   }
   static async killExistingRecordings() {
     try {
-      const result = execSync("pgrep -af arecord").toString();
-      if (result) {
-        logger.warn("⚠️ Detected active arecord process! Killing it...");
-        execSync("pkill -9 arecord");
+      const result = execSync("pgrep -af arecord").toString().trim();
+
+      if (!result) {
+        logger.info("✅ No active arecord processes detected.");
+        return;
       }
-    } catch (error) {
-      logger.error(
-        `🚨 Error checking and killing previous mic process: ${error}`,
-      );
+
+      const matchingLines = result
+        .split("\n")
+        .filter((line) => line.includes("arecord"));
+
+      if (matchingLines.length === 0) {
+        logger.info("✅ No relevant arecord processes running.");
+        return;
+      }
+
+      logger.warn("⚠️ Detected active arecord process(es). Killing...");
+      for (const line of matchingLines) {
+        const pid = line.split(" ")[0];
+        try {
+          execSync(`kill -9 ${pid}`);
+          logger.info(`🛑 Killed arecord process PID: ${pid}`);
+        } catch (killErr) {
+          logger.error(`❌ Failed to kill PID ${pid}: ${killErr}`);
+        }
+      }
+    } catch (error: any) {
+      if (
+        error.status === 1 &&
+        error.message.includes("pgrep") &&
+        error.stderr?.toString().includes("arecord")
+      ) {
+        logger.info("✅ No arecord process found.");
+      } else {
+        logger.error(
+          `🚨 Error checking for existing arecord processes: ${
+            error.message || error
+          }`,
+        );
+      }
     }
   }
 }
