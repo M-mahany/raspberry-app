@@ -1,5 +1,5 @@
 import fs from "fs-extra";
-import mic from "mic";
+import mic, { MicInputStream, MicInstance, MicOptions } from "mic";
 import dotenv from "dotenv";
 import path from "path";
 import { RecordingService } from "../services/recordingsService";
@@ -7,6 +7,7 @@ import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
 import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
+import { WriteStream } from "fs";
 
 dotenv.config();
 
@@ -18,66 +19,86 @@ const CONVERSION_CHECK_INTERVAL = 3 * 60 * 60 * 1000;
 
 const recordingFiles = new Set<string>(); // Stores active recordings
 
-const startRecording = () => {
-  const micInstance = mic({
-    device: "plughw:2,0",
-    rate: "16000",
-    channels: "1",
-    bitwidth: "16",
-    encoding: "signed-integer",
-    fileType: "raw",
-    debug: true,
-  });
+let micInstance: MicInstance;
+let micInputStream: MicInputStream;
+let outputFileStream: WriteStream;
 
-  const micInputStream = micInstance.getAudioStream();
+const micOptions: MicOptions = {
+  device: "plughw:2,0",
+  rate: "16000",
+  channels: "1",
+  bitwidth: "16",
+  encoding: "signed-integer",
+  fileType: "raw",
+  debug: true,
+};
+
+const now = dayjs();
+// Calculate time until next 12:00 AM
+const nextMidnight = now.endOf("day");
+const timeUntilMidnight = nextMidnight.diff(now);
+
+// Determine the shorter interval: 2 hours or time until midnight
+const stopInterval = Math.min(RECORDING_INTERVAL, timeUntilMidnight);
+
+const startRecording = () => {
+  micInstance = mic(micOptions);
+
+  micInputStream = micInstance.getAudioStream();
+
   const fileName = `${Date.now()}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
-  const now = dayjs();
 
-  const outputFileStream = fs.createWriteStream(rawFile, {
+  outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
   });
 
   micInputStream.pipe(outputFileStream);
-  micInstance.start();
-  logger.info(`🎙️ Recording started: ${getFileName(rawFile)}`);
+
+  micInputStream.on("startComplete", () => {
+    logger.info(`🎙️ Recording started: ${fileName}`);
+  });
 
   micInputStream.on("error", (err) => {
     logger.error(`⚠️ Mic error: ${err}`);
+    restartRecording(); // auto-restart on mic error
   });
 
-  // Calculate time until next 12:00 AM
-  const nextMidnight = now.endOf("day");
-  const timeUntilMidnight = nextMidnight.diff(now);
+  outputFileStream.once("finish", () => {
+    logger.info(`📁 Output file stream closed: ${rawFile}`);
+  });
 
-  // Determine the shorter interval: 2 hours or time until midnight
-  const stopInterval = Math.min(RECORDING_INTERVAL, timeUntilMidnight);
-
-  // Stop recording after the defined interval
-  setTimeout(() => {
-    micInstance.stop();
-  }, stopInterval);
+  micInstance.start();
 
   micInputStream.on("stopComplete", async () => {
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
 
-    // double check if the previous stop has completely killed the porcess
-    await RecordingService.killExistingRecordings();
     RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
-
-    // If it's midnight, delay restart by 1 second
-    if (dayjs().hour() === 0) {
-      logger.info(
-        "🌙 It's midnight! Waiting 1 second before starting a new session.",
-      );
-      setTimeout(startRecording, 1000);
-    } else {
-      // Restart immediately for regular intervals
-      startRecording();
-    }
   });
 };
+
+// Stops the current recording gracefully
+async function stopRecording() {
+  if (micInstance) {
+    micInstance.stop();
+    outputFileStream?.close();
+    micInputStream?.removeAllListeners(); // Prevent memory leaks
+    await RecordingService.killExistingRecordings();
+  }
+}
+
+// Restart recording on error or interruption
+async function restartRecording() {
+  logger.info("🔄 Restarting recording...");
+  await stopRecording();
+
+  if (dayjs().hour() === 0) {
+    logger.info("🌙 It's midnight! Waiting 1 second before new session.");
+  }
+
+  setTimeout(() => startRecording(), 1000);
+}
 
 const handleInterruptedFiles = async () => {
   try {
@@ -138,5 +159,16 @@ const runOnStart = async () => {
 
 runOnStart();
 
+// Restart recording periodically (e.g. every 2h or at midnight)
+setInterval(() => {
+  restartRecording();
+}, stopInterval);
+
 // Then schedule periodic checks
 setInterval(handleInterruptedFiles, CONVERSION_CHECK_INTERVAL);
+
+process.on("SIGINT", async () => {
+  logger.info("👋 Gracefully shutting down...");
+  await stopRecording();
+  process.exit(0);
+});
