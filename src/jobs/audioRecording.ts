@@ -62,7 +62,6 @@ const startRecording = () => {
 
   micInputStream.on("error", (err) => {
     logger.error(`⚠️ Mic error: ${err}`);
-    restartRecording(); // auto-restart on mic error
   });
 
   outputFileStream.once("finish", () => {
