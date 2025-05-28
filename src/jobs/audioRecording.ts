@@ -202,6 +202,7 @@ SystemService.realTimeUsbEventDetection();
 setInterval(() => {
   if (!recordingSession) return;
   SystemService.checkMicAvailable("firstAttempt");
+  SystemService.healthCPUTemp();
 }, 30000);
 
 process.on("SIGINT", async () => {

@@ -125,6 +125,20 @@ export class SystemService {
     }
   }
 
+  static async healthCPUTemp() {
+    try {
+      const cpuTemp = await si.cpuTemperature();
+      const celciusTemp = cpuTemp?.main;
+
+      if (celciusTemp > 60) {
+        await NotificationSevrice.sendHeartBeatToServer(
+          NotificationEvent.DEVICE_CPU_ALARM,
+          { key: "cpuTemp", value: celciusTemp },
+        );
+      }
+    } catch (err) {}
+  }
+
   static async restartApp() {
     // Restart the app using PM2
     logger.info("♻️ Restarting the app...");
