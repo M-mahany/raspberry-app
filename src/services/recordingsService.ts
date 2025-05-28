@@ -92,7 +92,7 @@ export class RecordingService {
       for (const line of matchingLines) {
         const pid = line.split(" ")[0];
         try {
-          execSync(`kill -9 ${pid}`);
+          execSync(`sudo kill -9 ${pid}`);
           logger.info(`🛑 Killed arecord process PID: ${pid}`);
         } catch (killErr) {
           logger.error(`❌ Failed to kill PID ${pid}: ${killErr}`);

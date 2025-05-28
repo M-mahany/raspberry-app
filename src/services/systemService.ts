@@ -6,6 +6,16 @@ import simpleGit from "simple-git";
 import { exec } from "child_process";
 import logger from "../utils/winston/logger";
 import util from "util";
+import { usb, getDeviceList } from "usb";
+import { NotificationEvent, NotificationSevrice } from "./notificationService";
+import {
+  cancelNextRestart,
+  recordingSession,
+  restartRecording,
+  scheduleNextRestart,
+  startRecording,
+  stopRecording,
+} from "../jobs/audioRecording";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -18,6 +28,18 @@ interface SystemUsage {
   totalMemory: string;
   usedMemory: string;
 }
+
+let isCheckingUSBMic = {
+  timeStamp: 0,
+  isActive: false,
+  buffer: 30000,
+};
+
+let isCheckingSystemMic = {
+  timeStamp: 0,
+  isActive: false,
+  buffer: 30000,
+};
 
 export class SystemService {
   static async getSystemHealth() {
@@ -173,6 +195,7 @@ export class SystemService {
       return { code: 500, message: `Error checking for updates: ${error}` };
     }
   }
+
   static updateSystem(): Promise<{ code: number; message: string }> {
     logger.info("Starting system update...");
 
@@ -195,5 +218,156 @@ export class SystemService {
         },
       );
     });
+  }
+
+  static isLikelyMic(device: usb.Device): boolean {
+    const deviceDescriptor = device.deviceDescriptor;
+    return (
+      deviceDescriptor.bDeviceClass === 0 || // will get the devie model number or vendor to get accurate mic tracking
+      deviceDescriptor.bDeviceSubClass === 0
+    );
+  }
+
+  static async refreshUsbPorts() {
+    try {
+      logger.warn("🧼 Attempting to refresh USB ports...");
+      // Trigger USB subsystem remove events
+      await execPromise(
+        "sudo udevadm trigger --subsystem-match=usb --action=remove",
+      );
+      // Wait a bit before re-adding devices
+      await new Promise((res) => setTimeout(res, 2000));
+      // Trigger USB subsystem add events
+      await execPromise(
+        "sudo udevadm trigger --subsystem-match=usb --action=add",
+      );
+
+      logger.info("🔁 USB ports refreshed via udevadm");
+
+      this.checkMicAvailable("secondAttempt");
+    } catch (error) {
+      logger.error("❌ Failed to refresh USB ports:", error);
+    }
+  }
+
+  static async checkMicAvailable(attempt: "firstAttempt" | "secondAttempt") {
+    try {
+      const { isActive, timeStamp, buffer } = isCheckingSystemMic;
+      const now = Date.now();
+
+      if (isActive || now - timeStamp < buffer) {
+        return;
+      }
+
+      isCheckingSystemMic.isActive = true;
+      isCheckingSystemMic.timeStamp = now;
+
+      const { stdout, stderr } = await execPromise("arecord -l");
+      if (stderr || !stdout.includes("card")) {
+        logger.error("❌ Mic unusable by system (arecord)");
+
+        //skipping refreshing or rebooting system if there is no connected mic to the USB ports.
+        const isHardwareIssue = await this.checkUSBMicDevice();
+        if (isHardwareIssue) return;
+
+        if (attempt === "firstAttempt") {
+          await this.refreshUsbPorts();
+        }
+        if (attempt === "secondAttempt") {
+          logger.error(
+            "❌ Mic still not available after USB refresh. Rebooting...",
+          );
+
+          const uptimeInSeconds = os.uptime();
+
+          if (uptimeInSeconds / 60 < 60) {
+            logger.warn("⚠️ Recently rebooted, skipping another reboot.");
+            return;
+          }
+
+          await NotificationSevrice.sendHeartBeatToServer(
+            NotificationEvent.DEVICE_SYSTEM_MIC_OFF,
+          );
+          stopRecording();
+          cancelNextRestart();
+
+          await execPromise("sudo reboot");
+        }
+      } else {
+        if (attempt === "firstAttempt") {
+          logger.info("✅ Mic available via arecord");
+        }
+        if (attempt === "secondAttempt") {
+          logger.info("✅ Mic became available after USB refresh.");
+          restartRecording();
+        }
+      }
+      isCheckingSystemMic.isActive = false;
+    } catch (error) {
+      isCheckingSystemMic.isActive = false;
+      logger.error("❌ Error checking mic availability:", error);
+    }
+  }
+
+  static realTimeUsbEventDetection() {
+    // 🔌 When a device is plugged in
+    usb.on("attach", (device) => {
+      if (this.isLikelyMic(device)) {
+        logger.info("🔌 USB mic attached:", device.deviceDescriptor);
+        if (!recordingSession) {
+          logger.info("USB Mic Plugged!, starting recording...");
+          startRecording();
+          scheduleNextRestart();
+        }
+      }
+    });
+
+    // 🔌 When a device is removed
+    usb.on("detach", (device) => {
+      if (this.isLikelyMic(device)) {
+        logger.error("❌ USB mic detached:", device.deviceDescriptor);
+        this.checkUSBMicDevice();
+      }
+    });
+  }
+
+  static async checkUSBMicDevice() {
+    const { isActive, timeStamp, buffer } = isCheckingUSBMic;
+    const now = Date.now();
+
+    const micDevicesStillConnected = this.listCurrentUSBDevices();
+
+    if (micDevicesStillConnected?.length === 0) {
+      if (isActive || now - timeStamp < buffer) {
+        return true;
+      }
+      isCheckingUSBMic.isActive = true;
+      isCheckingUSBMic.timeStamp = now;
+
+      logger.warn("No USB mic is connected, stopping recording...");
+
+      stopRecording();
+      cancelNextRestart();
+
+      await NotificationSevrice.sendHeartBeatToServer(
+        NotificationEvent.DEVICE_HARDWARE_MIC_OFF,
+      );
+      isCheckingUSBMic.isActive = false;
+      return true;
+    }
+    return false;
+  }
+
+  static listCurrentUSBDevices() {
+    const devices = getDeviceList();
+    console.log("list devices", devices);
+    const micDevices = devices.filter(this.isLikelyMic);
+    console.log("list mic devices", devices);
+    if (micDevices.length > 0) {
+      logger.info("🔍 Mic(s) already connected");
+    } else {
+      logger.info("🔍 No USB mic found initially");
+    }
+    return micDevices;
   }
 }

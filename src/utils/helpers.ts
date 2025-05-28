@@ -36,6 +36,12 @@ export const convertLogsToJson = (
   return { logs: paginatedLogs, total: totalLogs, page, limit };
 };
 
+export const getFileDuration = (fileName: string) => {
+  const fileTimestamp = Number(fileName.split(".")[0]);
+  const fileDuration = dayjs(Date.now()).diff(fileTimestamp, "second");
+  return fileDuration;
+};
+
 export const getTimeZone = () => {
   return dayjs.tz.guess();
 };
