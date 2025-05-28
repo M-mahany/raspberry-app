@@ -180,21 +180,21 @@ export class SystemService {
         await git.pull("origin", "main");
 
         // Check if package.json changed (to reinstall dependencies)
-        const changedFiles = await git.diffSummary(["HEAD~1"]);
-        const needsNpmInstall = changedFiles.files.some((file) =>
-          file.file.includes("package.json"),
-        );
+        // const changedFiles = await git.diffSummary(["HEAD~1"]);
+        // const needsNpmInstall = changedFiles.files.some((file) =>
+        //   file.file.includes("package.json"),
+        // );
 
-        if (needsNpmInstall) {
-          logger.info("📦 Installing dependencies...");
-          try {
-            const { stdout } = await execPromise("npm install");
-            logger.info(`✅ Dependencies updated:\n${stdout}`);
-          } catch (err) {
-            logger.error(`❌ Failed to install dependencies: ${err}`);
-            return { code: 500, message: "Failed to install dependencies" };
-          }
+        // if (needsNpmInstall) {
+        logger.info("📦 Installing dependencies...");
+        try {
+          const { stdout } = await execPromise("npm install");
+          logger.info(`✅ Dependencies updated:\n${stdout}`);
+        } catch (err) {
+          logger.error(`❌ Failed to install dependencies: ${err}`);
+          return { code: 500, message: "Failed to install dependencies" };
         }
+        // }
 
         //Building app before restarting
         logger.info("📦 Building app in process...");
