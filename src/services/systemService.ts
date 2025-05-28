@@ -142,8 +142,6 @@ export class SystemService {
           },
         );
       }
-
-
     } catch (error: any) {
       logger.error(
         `Error retrieving CPU temperature: ${error?.message || error}`,
@@ -184,7 +182,6 @@ export class SystemService {
         // const needsNpmInstall = changedFiles.files.some((file) =>
         //   file.file.includes("package.json"),
         // );
-
 
         // if (needsNpmInstall) {
         logger.info("📦 Installing dependencies...");
@@ -280,6 +277,8 @@ export class SystemService {
   static async checkMicAvailable(attempt: "firstAttempt" | "secondAttempt") {
     try {
       const { isActive, timeStamp, buffer } = isCheckingSystemMic;
+
+      const capturedTimestamp = timeStamp;
       const now = Date.now();
 
       if (isActive || now - timeStamp < buffer) {
@@ -322,7 +321,9 @@ export class SystemService {
         }
       } else {
         if (attempt === "firstAttempt") {
-          logger.info("✅ Mic available via arecord");
+          if (capturedTimestamp === 0) {
+            logger.info("✅ Mic available via arecord");
+          }
         }
         if (attempt === "secondAttempt") {
           logger.info("✅ Mic became available after USB refresh.");
