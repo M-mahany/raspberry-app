@@ -136,7 +136,11 @@ export class SystemService {
           { key: "cpuTemp", value: celciusTemp },
         );
       }
-    } catch (err) {}
+    } catch (error: any) {
+      logger.error(
+        `Error retrieving CPU temperature: ${error?.message || error}`,
+      );
+    }
   }
 
   static async restartApp() {
