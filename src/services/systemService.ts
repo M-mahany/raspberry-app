@@ -281,7 +281,7 @@ export class SystemService {
       const capturedTimestamp = timeStamp;
       const now = Date.now();
 
-      if (isActive || now - timeStamp < buffer) {
+      if ((isActive || now - timeStamp < buffer) && attempt !== 'secondAttempt') {
         return;
       }
 

@@ -41,12 +41,12 @@ export class NotificationSevrice {
 
     const lastActivityDuration = dayjs(now).diff(
       lastActivityDate ?? now,
-      "hour",
+      "minute",
     );
 
-    if (lastActivityDate && lastActivityDuration < 2) {
+    if (lastActivityDate && lastActivityDuration < 60) {
       logger.info(
-        `Skipping sending notification! notified user about "${event}" ${lastActivityDuration} seconds ago `,
+        `Skipping sending notification! notified user about "${event}" ${lastActivityDuration} minute(s) ago `,
       );
       return;
     }
@@ -61,9 +61,9 @@ export class NotificationSevrice {
       if (meta_data) {
         apiBody.meta_data = meta_data;
       }
-
       await serverAPI.post("/notification/device", apiBody);
     } catch (error: any) {
+      console.log(error)
       logger.error(`Error Sending HeartBeat ${error?.message || error}`);
     }
   }
