@@ -20,15 +20,20 @@ let lastActivity = <lastActivity>{
   DEVICE_CPU_ALARM: null,
 };
 
-interface MetaDATA {
+interface METADATA {
   key: string;
   value: string | number;
+}
+
+interface APIBODY {
+  event: NotificationEvent;
+  meta_data?: METADATA;
 }
 
 export class NotificationSevrice {
   static async sendHeartBeatToServer(
     event: NotificationEvent,
-    meta_data?: MetaDATA,
+    meta_data?: METADATA,
   ) {
     const lastActivityDate = lastActivity[event];
 
@@ -49,13 +54,12 @@ export class NotificationSevrice {
 
     lastActivity[event] = Date.now();
     try {
-      let apiBody = {
+      let apiBody: APIBODY = {
         event,
-        meta_data: [] as MetaDATA[],
       };
 
       if (meta_data) {
-        apiBody.meta_data.push(meta_data);
+        apiBody.meta_data = meta_data;
       }
 
       await serverAPI.post("/notification/device", apiBody);

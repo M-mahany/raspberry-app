@@ -125,17 +125,25 @@ export class SystemService {
     }
   }
 
-  static async healthCPUTemp() {
+  static async CPUHealthUsage() {
     try {
-      const cpuTemp = await si.cpuTemperature();
-      const celciusTemp = cpuTemp?.main;
+      const cpuUsagePercentage: number = await new Promise((resolve) => {
+        osu.cpuUsage((usage) => {
+          resolve(usage * 100 || 0);
+        });
+      });
 
-      if (celciusTemp > 60) {
+      if (cpuUsagePercentage > 70) {
         await NotificationSevrice.sendHeartBeatToServer(
           NotificationEvent.DEVICE_CPU_ALARM,
-          { key: "cpuTemp", value: celciusTemp },
+          {
+            key: "cpuUsage",
+            value: cpuUsagePercentage,
+          },
         );
       }
+
+
     } catch (error: any) {
       logger.error(
         `Error retrieving CPU temperature: ${error?.message || error}`,
