@@ -63,7 +63,6 @@ export class NotificationSevrice {
       }
       await serverAPI.post("/notification/device", apiBody);
     } catch (error: any) {
-      console.log(error)
       logger.error(`Error Sending HeartBeat ${error?.message || error}`);
     }
   }

@@ -41,6 +41,8 @@ let isCheckingSystemMic = {
   buffer: 30000,
 };
 
+let isRefreshingUsbPorts = false;
+
 export class SystemService {
   static async getSystemHealth() {
     try {
@@ -254,6 +256,7 @@ export class SystemService {
 
   static async refreshUsbPorts() {
     try {
+      isRefreshingUsbPorts = true;
       logger.warn("🧼 Attempting to refresh USB ports...");
       // Trigger USB subsystem remove events
       await execPromise(
@@ -267,9 +270,10 @@ export class SystemService {
       );
 
       logger.info("🔁 USB ports refreshed via udevadm");
-
+      isRefreshingUsbPorts = false;
       this.checkMicAvailable("secondAttempt");
     } catch (error) {
+      isRefreshingUsbPorts = false;
       logger.error("❌ Failed to refresh USB ports:", error);
     }
   }
@@ -281,7 +285,10 @@ export class SystemService {
       const capturedTimestamp = timeStamp;
       const now = Date.now();
 
-      if ((isActive || now - timeStamp < buffer) && attempt !== 'secondAttempt') {
+      if (
+        (isActive || now - timeStamp < buffer) &&
+        attempt !== "secondAttempt"
+      ) {
         return;
       }
 
@@ -290,33 +297,34 @@ export class SystemService {
 
       const { stdout, stderr } = await execPromise("arecord -l");
       if (stderr || !stdout.includes("card")) {
-        logger.error("❌ Mic unusable by system (arecord)");
-
         //skipping refreshing or rebooting system if there is no connected mic to the USB ports.
         const isHardwareIssue = await this.checkUSBMicDevice();
         if (isHardwareIssue) return;
 
         if (attempt === "firstAttempt") {
+          logger.error("❌ Mic unusable by system (arecord)");
           await this.refreshUsbPorts();
         }
         if (attempt === "secondAttempt") {
-          logger.error(
-            "❌ Mic still not available after USB refresh. Rebooting...",
-          );
+          logger.error("❌ Mic still not available after USB refresh.");
 
           const uptimeInSeconds = os.uptime();
 
+          stopRecording();
+          cancelNextRestart();
+
           if (uptimeInSeconds / 60 < 60) {
-            logger.warn("⚠️ Recently rebooted, skipping another reboot.");
+            logger.warn(
+              `⚠️ Recently rebooted device since ${uptimeInSeconds / 60} minute(s), skipping another reboot.`,
+            );
             return;
           }
 
           await NotificationSevrice.sendHeartBeatToServer(
             NotificationEvent.DEVICE_SYSTEM_MIC_OFF,
           );
-          stopRecording();
-          cancelNextRestart();
 
+          logger.warn("⚠️ Rebooting device...");
           await execPromise("sudo reboot");
         }
       } else {
@@ -340,6 +348,7 @@ export class SystemService {
   static realTimeUsbEventDetection() {
     // 🔌 When a device is plugged in
     usb.on("attach", (device) => {
+      if (isRefreshingUsbPorts) return;
       if (this.isLikelyMic(device)) {
         logger.info("🔌 USB mic attached:", device.deviceDescriptor);
         if (!recordingSession) {
@@ -352,8 +361,9 @@ export class SystemService {
 
     // 🔌 When a device is removed
     usb.on("detach", (device) => {
+      if (isRefreshingUsbPorts) return;
       if (this.isLikelyMic(device)) {
-        logger.error("❌ USB mic detached:", device.deviceDescriptor);
+        logger.error("❌ USB mic detached:", device);
         this.checkUSBMicDevice();
       }
     });
@@ -363,9 +373,9 @@ export class SystemService {
     const { isActive, timeStamp, buffer } = isCheckingUSBMic;
     const now = Date.now();
 
-    const micDevicesStillConnected = this.listCurrentUSBDevices();
+    const micFound = this.listCurrentUSBDevices();
 
-    if (micDevicesStillConnected?.length === 0) {
+    if (micFound?.length === 0) {
       if (isActive || now - timeStamp < buffer) {
         return true;
       }
