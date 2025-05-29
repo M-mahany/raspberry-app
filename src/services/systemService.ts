@@ -270,7 +270,9 @@ export class SystemService {
       );
 
       logger.info("🔁 USB ports refreshed via udevadm");
+
       isRefreshingUsbPorts = false;
+
       this.checkMicAvailable("secondAttempt");
     } catch (error) {
       isRefreshingUsbPorts = false;
