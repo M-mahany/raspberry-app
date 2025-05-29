@@ -297,7 +297,7 @@ export class SystemService {
 
       const { stdout, stderr } = await execPromise("arecord -l");
       if (stderr || !stdout.includes("card")) {
-        //skipping refreshing or rebooting system if there is no connected mic to the USB ports.
+        //Skipping either refresh usb ports or reboot device on hardware issue.
         const isHardwareIssue = await this.checkUSBMicDevice();
         if (isHardwareIssue) return;
 
