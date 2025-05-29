@@ -27,13 +27,13 @@ interface METADATA {
 
 interface APIBODY {
   event: NotificationEvent;
-  meta_data?: METADATA;
+  meta_data?: METADATA[];
 }
 
 export class NotificationSevrice {
   static async sendHeartBeatToServer(
     event: NotificationEvent,
-    meta_data?: METADATA,
+    meta_data?: METADATA[],
   ) {
     const lastActivityDate = lastActivity[event];
 

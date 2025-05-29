@@ -200,10 +200,10 @@ setInterval(handleInterruptedFiles, CONVERSION_CHECK_INTERVAL);
 SystemService.realTimeUsbEventDetection();
 
 setInterval(() => {
+  SystemService.CPUHealthUsage();
   if (!recordingSession) return;
   SystemService.checkMicAvailable("firstAttempt");
-  SystemService.CPUHealthUsage();
-}, 30000);
+}, 35000);
 
 process.on("SIGINT", async () => {
   logger.info("👋 Gracefully shutting down...");

@@ -45,3 +45,6 @@ export const getFileDuration = (fileName: string) => {
 export const getTimeZone = () => {
   return dayjs.tz.guess();
 };
+
+export const waitForMs = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms));

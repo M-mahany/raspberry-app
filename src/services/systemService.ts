@@ -16,6 +16,8 @@ import {
   startRecording,
   stopRecording,
 } from "../jobs/audioRecording";
+import { waitForMs } from "../utils/helpers";
+import dayjs from "dayjs";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -40,6 +42,9 @@ let isCheckingSystemMic = {
   isActive: false,
   buffer: 30000,
 };
+
+let cpuReportedAT: number | null = null;
+const CPU_THRESHOLD = 70;
 
 let isRefreshingUsbPorts = false;
 
@@ -129,20 +134,34 @@ export class SystemService {
 
   static async CPUHealthUsage() {
     try {
+      const now = Date.now();
+
+      const shouldCheckAndNotify =
+        !cpuReportedAT || dayjs(now).diff(cpuReportedAT, "minute") > 60;
+
+      if (!shouldCheckAndNotify) return;
+
       const cpuUsagePercentage: number = await new Promise((resolve) => {
         osu.cpuUsage((usage) => {
           resolve(usage * 100 || 0);
         });
       });
 
-      if (cpuUsagePercentage > 70) {
+      if (cpuUsagePercentage > CPU_THRESHOLD) {
         await NotificationSevrice.sendHeartBeatToServer(
           NotificationEvent.DEVICE_CPU_ALARM,
-          {
-            key: "cpuUsage",
-            value: cpuUsagePercentage,
-          },
+          [
+            {
+              key: "cpuUsage",
+              value: cpuUsagePercentage,
+            },
+            {
+              key: "threshold",
+              value: CPU_THRESHOLD,
+            },
+          ],
         );
+        cpuReportedAT = now;
       }
     } catch (error: any) {
       logger.error(
@@ -263,15 +282,16 @@ export class SystemService {
         "sudo udevadm trigger --subsystem-match=usb --action=remove",
       );
       // Wait a bit before re-adding devices
-      await new Promise((res) => setTimeout(res, 2000));
+      await waitForMs(2000);
       // Trigger USB subsystem add events
       await execPromise(
         "sudo udevadm trigger --subsystem-match=usb --action=add",
       );
-
       logger.info("🔁 USB ports refreshed via udevadm");
 
+      await waitForMs(1000);
       isRefreshingUsbPorts = false;
+
       this.checkMicAvailable("secondAttempt");
     } catch (error) {
       isRefreshingUsbPorts = false;
@@ -288,7 +308,7 @@ export class SystemService {
 
       if (
         (isActive || now - timeStamp < buffer) &&
-        attempt !== "secondAttempt"
+        attempt === "firstAttempt"
       ) {
         return;
       }
@@ -298,7 +318,7 @@ export class SystemService {
 
       const { stdout, stderr } = await execPromise("arecord -l");
       if (stderr || !stdout.includes("card")) {
-        //Skipping either refresh usb ports or reboot device on hardware issue.
+        //Skipping either refresh USB ports or Reboot device on hardware issue.
         const isHardwareIssue = await this.checkUSBMicDevice();
         if (isHardwareIssue) return;
 
@@ -365,12 +385,12 @@ export class SystemService {
       if (isRefreshingUsbPorts) return;
       if (this.isLikelyMic(device)) {
         logger.error("❌ USB mic detached:", device);
-        this.checkUSBMicDevice();
+        this.checkUSBMicDevice(true);
       }
     });
   }
 
-  static async checkUSBMicDevice() {
+  static async checkUSBMicDevice(restart?: boolean) {
     const { isActive, timeStamp, buffer } = isCheckingUSBMic;
     const now = Date.now();
 
@@ -393,6 +413,10 @@ export class SystemService {
       );
       isCheckingUSBMic.isActive = false;
       return true;
+    }
+
+    if (restart) {
+      restartRecording();
     }
     return false;
   }
