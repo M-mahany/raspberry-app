@@ -44,7 +44,7 @@ let isCheckingSystemMic = {
 };
 
 let cpuReportedAT: number | null = null;
-const CPU_THRESHOLD = 70;
+const CPU_THRESHOLD = 0.25;
 
 let isRefreshingUsbPorts = false;
 
