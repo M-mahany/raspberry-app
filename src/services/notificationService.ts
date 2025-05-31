@@ -4,19 +4,25 @@ import logger from "../utils/winston/logger";
 
 interface lastActivity {
   DEVICE_SYSTEM_MIC_OFF: null | number;
+  DEVICE_SYSTEM_MIC_ON: null | number;
   DEVICE_HARDWARE_MIC_OFF: null | number;
+  DEVICE_HARDWARE_MIC_ON: null | number;
   DEVICE_CPU_ALARM: null | number;
 }
 
 export enum NotificationEvent {
   DEVICE_SYSTEM_MIC_OFF = "DEVICE_SYSTEM_MIC_OFF",
+  DEVICE_SYSTEM_MIC_ON = "DEVICE_SYSTEM_MIC_ON",
   DEVICE_HARDWARE_MIC_OFF = "DEVICE_HARDWARE_MIC_OFF",
   DEVICE_CPU_ALARM = "DEVICE_CPU_ALARM",
+  DEVICE_HARDWARE_MIC_ON = "DEVICE_HARDWARE_MIC_ON"
 }
 
 let lastActivity = <lastActivity>{
   DEVICE_SYSTEM_MIC_OFF: null,
+  DEVICE_SYSTEM_MIC_ON: null,
   DEVICE_HARDWARE_MIC_OFF: null,
+  DEVICE_HARDWARE_MIC_ON: null,
   DEVICE_CPU_ALARM: null,
 };
 

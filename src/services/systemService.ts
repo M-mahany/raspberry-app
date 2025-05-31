@@ -350,13 +350,23 @@ export class SystemService {
         }
       } else {
         if (attempt === "firstAttempt") {
-          if (capturedTimestamp === 0) {
+          if (capturedTimestamp === 0 || !recordingSession) {
             logger.info("✅ Mic available via arecord");
+            if (!recordingSession) {
+              startRecording();
+              scheduleNextRestart();
+            }
+            await NotificationSevrice.sendHeartBeatToServer(
+              NotificationEvent.DEVICE_SYSTEM_MIC_ON,
+            );
           }
         }
         if (attempt === "secondAttempt") {
           logger.info("✅ Mic became available after USB refresh.");
           restartRecording();
+          await NotificationSevrice.sendHeartBeatToServer(
+            NotificationEvent.DEVICE_SYSTEM_MIC_ON,
+          );
         }
       }
       isCheckingSystemMic.isActive = false;
@@ -367,8 +377,8 @@ export class SystemService {
   }
 
   static realTimeUsbEventDetection() {
-    // 🔌 When a device is plugged in
-    usb.on("attach", (device) => {
+    //🔌 When a device is plugged in
+    usb.on("attach", async (device) => {
       if (isRefreshingUsbPorts) return;
       if (this.isLikelyMic(device)) {
         logger.info("🔌 USB mic attached:", device.deviceDescriptor);
@@ -376,6 +386,9 @@ export class SystemService {
           logger.info("USB Mic Plugged!, starting recording...");
           startRecording();
           scheduleNextRestart();
+          await NotificationSevrice.sendHeartBeatToServer(
+            NotificationEvent.DEVICE_HARDWARE_MIC_ON,
+          );
         }
       }
     });
@@ -390,7 +403,8 @@ export class SystemService {
     });
   }
 
-  static async checkUSBMicDevice(restart?: boolean) {
+  static async checkUSBMicDevice(restart: boolean = false) {
+    if (!recordingSession && !restart) return true;
     const { isActive, timeStamp, buffer } = isCheckingUSBMic;
     const now = Date.now();
 

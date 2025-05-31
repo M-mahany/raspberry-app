@@ -201,7 +201,6 @@ SystemService.realTimeUsbEventDetection();
 
 setInterval(() => {
   SystemService.CPUHealthUsage();
-  if (!recordingSession) return;
   SystemService.checkMicAvailable("firstAttempt");
 }, 35000);
 
