@@ -52,11 +52,11 @@ export class NotificationSevrice {
 
     if (lastActivityDate && lastActivityDuration < 60) {
       logger.info(
-        `Skipping sending notification! notified user about "${event}" ${lastActivityDuration} minute(s) ago `,
+        `Skipping sending notification! notified server about "${event}" ${lastActivityDuration} minute(s) ago `,
       );
       return;
     }
-    logger.info(`Sending notification! notifying admins about ${event}`);
+    logger.info(`Sending notification! notifying server about ${event}`);
 
     lastActivity[event] = Date.now();
     try {
