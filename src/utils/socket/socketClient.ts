@@ -6,6 +6,7 @@ dotenv.config();
 
 const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
+    clientType: 'device',
     accessToken: process.env.ACCESS_TOKEN,
   },
 });
