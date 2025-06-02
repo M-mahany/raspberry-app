@@ -24,6 +24,7 @@ let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
 export let recordingSession = false;
 let restartTimer: NodeJS.Timeout | null = null;
+let isRestarting = false;
 
 const micOptions: MicOptions = {
   device: "plughw:2,0",
@@ -97,14 +98,15 @@ export const stopRecording = async () => {
 
 // Restart recording on error or interruption
 export const restartRecording = async () => {
+  isRestarting = true;
   logger.info("🔄 Restarting recording...");
   await stopRecording();
 
   if (dayjs().hour() === 0) {
     logger.info("🌙 It's midnight! Waiting 1 second before new session.");
   }
-
   setTimeout(() => startRecording(), 1000);
+  isRestarting = false;
 };
 
 const handleInterruptedFiles = async () => {
@@ -201,7 +203,9 @@ SystemService.realTimeUsbEventDetection();
 
 setInterval(() => {
   SystemService.CPUHealthUsage();
-  SystemService.checkMicAvailable("firstAttempt");
+  if (!isRestarting) {
+    SystemService.checkMicAvailable("firstAttempt");
+  }
 }, 35000);
 
 process.on("SIGINT", async () => {
