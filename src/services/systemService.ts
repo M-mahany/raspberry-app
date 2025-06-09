@@ -299,7 +299,10 @@ export class SystemService {
     }
   }
 
-  static async checkMicAvailable(attempt: "firstAttempt" | "secondAttempt") {
+  static async checkMicAvailable(
+    attempt: "firstAttempt" | "secondAttempt",
+    allowNotification: boolean = false,
+  ) {
     try {
       const { isActive, timeStamp, buffer } = isCheckingSystemMic;
 
@@ -350,7 +353,11 @@ export class SystemService {
         }
       } else {
         if (attempt === "firstAttempt") {
-          if (capturedTimestamp === 0 || !recordingSession) {
+          if (
+            capturedTimestamp === 0 ||
+            !recordingSession ||
+            allowNotification
+          ) {
             logger.info("✅ Mic available via arecord");
             if (!recordingSession) {
               startRecording();
