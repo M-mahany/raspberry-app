@@ -57,7 +57,7 @@ export const startRecording = async () => {
   isMicInterrupted = false;
   recordingSession = true;
 
-  SystemService.checkMicOnStart(isMicActive);
+  await SystemService.checkMicOnStart(isMicActive);
 
   micInstance = mic(micOptions);
 

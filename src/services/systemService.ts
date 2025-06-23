@@ -267,8 +267,11 @@ export class SystemService {
 
   static async checkMicOnStart(isMicActive: boolean) {
     try {
+      logger.info(`cheking mic health on start isMicActive:${isMicActive}`);
       if (isMicActive) return;
       const isMicDetected = await this.isMicDetected();
+      logger.info(`cheking mic health on start isMicDetected:${isMicDetected}`);
+
       if (isMicDetected) {
         const isMicAvailable = await this.isMicAvailable();
         if (isMicAvailable) {
@@ -406,8 +409,9 @@ export class SystemService {
 
     try {
       await execPromise(
-        `arecord -c 1 -r 16000 -f S16_LE -D default "${filePath}" --duration=1`,
+        `arecord -D default -c 1 -r 16000 -f S16_LE "${filePath}" --duration=1`,
       );
+
       if (existsSync(filePath)) {
         await unlink(filePath);
         logger.info("✅ Mic tested and avaiable for recoding");
@@ -416,10 +420,7 @@ export class SystemService {
       logger.error("❌ Mic is not avaiable for recording");
       return false;
     } catch (err: any) {
-      logger.error(
-        "❌ Mic is not available for recording! Error:",
-        err?.message || err,
-      );
+      logger.error("❌ Mic is not available for recording! Error:", err);
       return false;
     }
   }
