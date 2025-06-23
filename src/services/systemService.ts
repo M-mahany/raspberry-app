@@ -416,7 +416,7 @@ export class SystemService {
         "-f",
         "S16_LE",
         filePath,
-        "--duration=0.1",
+        "--duration=1",
       ]);
 
       arecord.on("error", (err) => {
