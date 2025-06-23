@@ -21,7 +21,6 @@ import { waitForMs } from "../utils/helpers";
 import path from "path";
 import { existsSync } from "fs";
 import { unlink } from "fs/promises";
-import { RecordingService } from "./recordingsService";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -413,7 +412,7 @@ export class SystemService {
         `arecord -D default -c 1 -r 16000 -f S16_LE ${filePath} --duration=1`,
       );
 
-      await RecordingService.killExistingRecordings();
+      await execPromise("sudo killall arecord || true");
 
       if (existsSync(filePath)) {
         await unlink(filePath);

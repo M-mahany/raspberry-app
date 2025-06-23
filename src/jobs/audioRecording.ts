@@ -55,9 +55,10 @@ export const startRecording = async () => {
   }
 
   isMicInterrupted = false;
-  recordingSession = true;
 
   await SystemService.checkMicOnStart(isMicActive);
+
+  recordingSession = true;
 
   micInstance = mic(micOptions);
 
@@ -233,7 +234,11 @@ export function cancelMicHealthCheckInterval() {
 }
 
 const micMonitor = () => {
-  if (Date.now() - micLastActive > 3000 && !isMicInterrupted && micInstance) {
+  if (
+    Date.now() - micLastActive > 3000 &&
+    !isMicInterrupted &&
+    recordingSession
+  ) {
     logger.error(`⚠️ Mic Interrupted, handling interruption in progress...`);
     isMicInterrupted = true;
     isMicActive = false;
