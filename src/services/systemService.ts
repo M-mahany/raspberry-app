@@ -412,7 +412,8 @@ export class SystemService {
         `arecord -D default -c 1 -r 16000 -f S16_LE ${filePath} --duration=1`,
       );
 
-      await execPromise("sudo killall arecord || true");
+      // await execPromise("sudo killall arecord || true");
+      await waitForMs(500);
 
       if (existsSync(filePath)) {
         await unlink(filePath);
