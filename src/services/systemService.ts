@@ -275,7 +275,7 @@ export class SystemService {
       if (isMicDetected) {
         const isMicAvailable = await this.isMicAvailable();
         if (isMicAvailable) {
-          await NotificationSevrice.sendHeartBeatToServer(
+          NotificationSevrice.sendHeartBeatToServer(
             NotificationEvent.DEVICE_SYSTEM_MIC_ON,
           );
         }
@@ -394,7 +394,7 @@ export class SystemService {
       return true;
     } catch (err: any) {
       logger.error(
-        `Error checking USB devices availabilty using "arecord:" Error: ${err?.message || err}`,
+        `Error checking USB devices availabilty using "arecord" Error: ${err?.message || err}`,
       );
       return false;
     }
@@ -409,7 +409,7 @@ export class SystemService {
 
     try {
       await execPromise(
-        `arecord -D default -c 1 -r 16000 -f S16_LE "${filePath}" --duration=1`,
+        `arecord -D default -c 1 -r 16000 -f S16_LE ${filePath} --duration=1`,
       );
 
       if (existsSync(filePath)) {
