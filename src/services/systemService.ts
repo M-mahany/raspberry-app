@@ -430,7 +430,7 @@ export class SystemService {
           return resolve(false);
         }
 
-        await waitForMs(300);
+        await waitForMs(1100);
 
         try {
           if (existsSync(filePath)) {
