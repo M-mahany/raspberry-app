@@ -273,12 +273,12 @@ export class SystemService {
       logger.info(`cheking mic health on start isMicDetected:${isMicDetected}`);
 
       if (isMicDetected) {
-        // const isMicAvailable = await this.isMicAvailable();
-        // if (isMicAvailable) {
-        NotificationSevrice.sendHeartBeatToServer(
-          NotificationEvent.DEVICE_SYSTEM_MIC_ON,
-        );
-        // }
+        const isMicAvailable = await this.isMicAvailable();
+        if (isMicAvailable) {
+          NotificationSevrice.sendHeartBeatToServer(
+            NotificationEvent.DEVICE_SYSTEM_MIC_ON,
+          );
+        }
       }
     } catch (err) {
       logger.error("Error Checking Mic onStart");
