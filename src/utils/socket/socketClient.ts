@@ -1,7 +1,6 @@
 import { io } from "socket.io-client";
 import dotenv from "dotenv";
 import logger from "../winston/logger";
-import { SystemService } from "../../services/systemService";
 
 dotenv.config();
 
@@ -14,7 +13,6 @@ const socket = io(process.env.MAIN_SERVER_URL, {
 
 socket.on("connect", () => {
   logger.info(`✅ Successfully connected to WebSocket server: ${socket.id}`);
-  SystemService.checkMicAvailable("firstAttempt", true);
 });
 
 socket.on("connect_error", (error) => {

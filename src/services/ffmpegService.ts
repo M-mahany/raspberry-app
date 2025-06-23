@@ -60,7 +60,7 @@ export class ffmpegService {
               fs.unlinkSync(fileInput);
               return reject(
                 new Error(
-                  `Invalid media file: ${getFileName(fileInput)}, file is deleted. Error:${err}`,
+                  `Invalid media file: ${getFileName(fileInput)}, file is deleted`,
                 ),
               );
             } catch (err: any) {

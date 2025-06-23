@@ -4,28 +4,38 @@ import dotenv from "dotenv";
 import path from "path";
 import { RecordingService } from "../services/recordingsService";
 import logger from "../utils/winston/logger";
-import { getFileDuration, getFileName } from "../utils/helpers";
+import { getFileName } from "../utils/helpers";
 import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
 import { WriteStream } from "fs";
 
 dotenv.config();
 
+// RECORDING DIRECTORY
 const RECORDING_DIR = process.env.RECORDING_DIR || "./pending_upload";
 fs.ensureDirSync(RECORDING_DIR);
 
+// DEFAULT VARIABLES
 const RECORDING_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
 const CONVERSION_CHECK_INTERVAL = 3 * 60 * 60 * 1000;
-const NORMAL_FILE_DURATION = 7020; // 1 hour & 57 minutes accepted range of recording
+// const NORMAL_FILE_DURATION = 7020; // 1 hour & 57 minutes accepted range of recording
 const recordingFiles = new Set<string>(); // Stores active recordings
 
+// DYNAMIC VARIABLES
 let micInstance: MicInstance;
 let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
-export let recordingSession = false;
-let restartTimer: NodeJS.Timeout | null = null;
-let isRestarting = false;
 
+let recordingSession = false;
+let restartTimer: NodeJS.Timeout | null = null;
+let micLastActive: number = Date.now();
+let micHealthIntervalActive: NodeJS.Timeout | null = null;
+
+// MIC VARIABLES
+let isMicInterrupted = false;
+export let isMicActive = false;
+
+// MIC AUDIO OPTIONS
 const micOptions: MicOptions = {
   device: "plughw:2,0",
   rate: "16000",
@@ -36,15 +46,18 @@ const micOptions: MicOptions = {
   debug: true,
 };
 
-export const startRecording = () => {
+export const startRecording = async () => {
   if (recordingSession) {
     logger.warn(
-      "Active recording is already in progress. Skipping start new recroding...",
+      "Active recording is already in progress. Skipping starting new recording...",
     );
     return;
   }
 
+  isMicInterrupted = false;
   recordingSession = true;
+
+  SystemService.checkMicOnStart(isMicActive);
 
   micInstance = mic(micOptions);
 
@@ -68,22 +81,22 @@ export const startRecording = () => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  outputFileStream.once("finish", () => {
-    logger.info(`📁 Output file stream closed: ${rawFile}`);
-    const fileDuration = getFileDuration(fileName);
-    RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
-    // that means the recoding has been interrupted
-    if (fileDuration < NORMAL_FILE_DURATION) {
-      SystemService.checkMicAvailable("firstAttempt");
-    }
+  micInputStream.on("data", function () {
+    micLastActive = Date.now();
+    isMicActive = true;
   });
 
-  micInstance.start();
+  outputFileStream.once("finish", async () => {
+    logger.info(`📁 Output file stream closed: ${rawFile}`);
+    RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
+  });
 
   micInputStream.on("stopComplete", async () => {
     recordingSession = false;
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
   });
+
+  micInstance.start();
 };
 
 // Stops the current recording gracefully
@@ -98,15 +111,14 @@ export const stopRecording = async () => {
 
 // Restart recording on error or interruption
 export const restartRecording = async () => {
-  isRestarting = true;
   logger.info("🔄 Restarting recording...");
   await stopRecording();
 
   if (dayjs().hour() === 0) {
     logger.info("🌙 It's midnight! Waiting 1 second before new session.");
   }
+
   setTimeout(() => startRecording(), 1000);
-  isRestarting = false;
 };
 
 const handleInterruptedFiles = async () => {
@@ -195,18 +207,49 @@ export function cancelNextRestart() {
   }
 }
 
+export const startMicHealthCheckInterval = async () => {
+  if (micHealthIntervalActive) return;
+
+  micHealthIntervalActive = setTimeout(async () => {
+    const isMicAvailable = await SystemService.isMicAvailable();
+
+    if (!isMicAvailable) {
+      micHealthIntervalActive = null;
+      startMicHealthCheckInterval();
+    } else {
+      cancelMicHealthCheckInterval();
+      restartRecording();
+      scheduleNextRestart();
+    }
+  }, 10000);
+};
+
+export function cancelMicHealthCheckInterval() {
+  if (micHealthIntervalActive) {
+    clearTimeout(micHealthIntervalActive);
+    micHealthIntervalActive = null;
+    logger.info("Cancelled Mic Health Check Interval");
+  }
+}
+
+const micMonitor = () => {
+  if (Date.now() - micLastActive > 3000 && !isMicInterrupted) {
+    logger.error(`⚠️ Mic Interrupted, handling interruption in progress...`);
+    isMicInterrupted = true;
+    isMicActive = false;
+    SystemService.handleMicInterruption("firstAttempt");
+  }
+};
+
 // Then schedule periodic checks
 setInterval(handleInterruptedFiles, CONVERSION_CHECK_INTERVAL);
 
-// initialize real time event listner for any usb actions like plug or unplug
-SystemService.realTimeUsbEventDetection();
-
 setInterval(() => {
+  micMonitor();
   SystemService.CPUHealthUsage();
-  if (!isRestarting) {
-    SystemService.checkMicAvailable("firstAttempt");
-  }
-}, 35000);
+}, 3000);
+
+SystemService.realTimeUsbEventDetection();
 
 process.on("SIGINT", async () => {
   logger.info("👋 Gracefully shutting down...");

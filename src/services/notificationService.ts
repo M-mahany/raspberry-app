@@ -47,12 +47,14 @@ export class NotificationSevrice {
 
     const lastActivityDuration = dayjs(now).diff(
       lastActivityDate ?? now,
-      "minute",
+      "second",
     );
+    const bufferDuration =
+      event === NotificationEvent.DEVICE_CPU_ALARM ? 3600 : 10;
 
-    if (lastActivityDate && lastActivityDuration < 60) {
+    if (lastActivityDate && lastActivityDuration < bufferDuration) {
       logger.info(
-        `Skipping sending notification! notified server about "${event}" ${lastActivityDuration} minute(s) ago `,
+        `Skipping sending notification! notified server about "${event}" ${lastActivityDuration} seconds(s) ago `,
       );
       return;
     }

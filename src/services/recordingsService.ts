@@ -79,9 +79,13 @@ export class RecordingService {
         return;
       }
 
+      // const matchingLines = result
+      //   .split("\n")
+      //   .filter((line) => line.includes("arecord"));
+
       const matchingLines = result
         .split("\n")
-        .filter((line) => line.includes("arecord"));
+        .filter((line) => /^(\d+)\s+arecord\b/.test(line));
 
       if (matchingLines.length === 0) {
         logger.info("✅ No relevant arecord processes running.");
@@ -94,8 +98,10 @@ export class RecordingService {
         try {
           execSync(`sudo kill -9 ${pid}`);
           logger.info(`🛑 Killed arecord process PID: ${pid}`);
-        } catch (killErr) {
-          logger.error(`❌ Failed to kill PID ${pid}: ${killErr}`);
+        } catch (killErr: any) {
+          logger.error(
+            `❌ Failed to kill PID ${pid}. Error: ${killErr?.message || killErr}`,
+          );
         }
       }
     } catch (error: any) {
