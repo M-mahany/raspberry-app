@@ -381,8 +381,6 @@ export class SystemService {
     try {
       // if (platform === "win32") {
       //   command = `powershell -Command "Get-PnpDevice -Class 'AudioEndpoint' | Where-Object { $_.FriendlyName -like '*Microphone*' } | Select-Object -ExpandProperty FriendlyName"`;
-      // } else if (platform === "linux") {
-      // command = "arecord -l";
       // }
 
       const { stdout, stderr } = await execPromise("arecord -l");
@@ -402,19 +400,14 @@ export class SystemService {
   static async isMicAvailable(): Promise<boolean> {
     const filePath = path.join(os.tmpdir(), "temp_mic_check.wav");
 
-    let command = "";
-
     // if (platform === "win32") {
     //   command = `sox -b 16 --endian little -c 1 -r 16000 -e signed-integer -t waveaudio default "${filePath}" trim 0 1`;
-    // } else if (platform === "linux") {
-    command = `arecord -c 1 -r 16000 -f S16_LE -D default "${filePath}" --duration=1`;
-    // } else {
-    //   logger.error("Unsupported platform");
-    //   return false;
     // }
 
     try {
-      await execPromise(command);
+      await execPromise(
+        `arecord -c 1 -r 16000 -f S16_LE -D default "${filePath}" --duration=1`,
+      );
       if (existsSync(filePath)) {
         await unlink(filePath);
         logger.info("✅ Mic tested and avaiable for recoding");
