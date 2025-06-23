@@ -233,7 +233,7 @@ export function cancelMicHealthCheckInterval() {
 }
 
 const micMonitor = () => {
-  if (Date.now() - micLastActive > 3000 && !isMicInterrupted) {
+  if (Date.now() - micLastActive > 3000 && !isMicInterrupted && micInstance) {
     logger.error(`⚠️ Mic Interrupted, handling interruption in progress...`);
     isMicInterrupted = true;
     isMicActive = false;
