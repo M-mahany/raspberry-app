@@ -3,7 +3,7 @@ import osu from "os-utils";
 import si from "systeminformation";
 import dotenv from "dotenv";
 import simpleGit from "simple-git";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import logger from "../utils/winston/logger";
 import util from "util";
 import { NotificationEvent, NotificationSevrice } from "./notificationService";
@@ -403,29 +403,47 @@ export class SystemService {
   static async isMicAvailable(): Promise<boolean> {
     const filePath = path.join(os.tmpdir(), "temp_mic_check.wav");
 
-    // if (platform === "win32") {
-    //   command = `sox -b 16 --endian little -c 1 -r 16000 -e signed-integer -t waveaudio default "${filePath}" trim 0 1`;
-    // }
+    return new Promise((resolve) => {
+      logger.info("🎙️ Checking mic availability...");
 
-    try {
-      await execPromise(
-        `arecord -D default -c 1 -r 16000 -f S16_LE ${filePath} --duration=1`,
-      );
+      const arecord = spawn("arecord", [
+        "-D",
+        "default",
+        "-c",
+        "1",
+        "-r",
+        "16000",
+        "-f",
+        "S16_LE",
+        filePath,
+        "--duration=1",
+      ]);
 
-      // await execPromise("sudo killall arecord || true");
-      await waitForMs(500);
+      arecord.on("error", (err) => {
+        logger.error("❌ Mic check process error:", err);
+        resolve(false);
+      });
 
-      if (existsSync(filePath)) {
-        await unlink(filePath);
-        logger.info("✅ Mic tested and avaiable for recoding");
-        return true;
-      }
-      logger.error("❌ Mic is not avaiable for recording");
-      return false;
-    } catch (err: any) {
-      logger.error("❌ Mic is not available for recording! Error:", err);
-      return false;
-    }
+      arecord.on("close", async (code) => {
+        if (code !== 0) {
+          logger.error(`❌ arecord exited with code ${code}`);
+          return resolve(false);
+        }
+
+        await waitForMs(300);
+
+        try {
+          if (existsSync(filePath)) {
+            await unlink(filePath);
+          }
+          logger.info("✅ Mic is available and responsive.");
+          resolve(true);
+        } catch (err) {
+          logger.error("❌ Failed to clean up mic test file:", err);
+          resolve(false);
+        }
+      });
+    });
   }
 
   // is USB mic device connected and avaiable
