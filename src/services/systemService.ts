@@ -321,22 +321,10 @@ export class SystemService {
       const isMicDetected = await this.isMicDetected();
 
       if (!isMicDetected) {
+        const isMicConnected = await this.isUsbAudioDeviceConnected();
+
         if (attempt === "firstAttempt") {
           logger.error("❌ Mic undetected by the system (arecord)");
-          await this.cycleAllUsbPorts();
-          this.handleMicInterruption("secondAttempt");
-        }
-
-        if (attempt === "secondAttempt") {
-          logger.error("❌ Mic still not available after USB Power Cycle.");
-
-          const uptimeInSeconds = os.uptime();
-
-          stopRecording();
-          cancelNextRestart();
-
-          const isMicConnected = await this.isUsbAudioDeviceConnected();
-
           if (isMicConnected) {
             await NotificationService.sendHeartBeatToServer(
               NotificationEvent.DEVICE_SYSTEM_MIC_OFF,
@@ -345,8 +333,21 @@ export class SystemService {
             await NotificationService.sendHeartBeatToServer(
               NotificationEvent.DEVICE_HARDWARE_MIC_OFF,
             );
-            return;
           }
+
+          await this.cycleAllUsbPorts();
+          this.handleMicInterruption("secondAttempt");
+        }
+
+        if (attempt === "secondAttempt") {
+          logger.error("❌ Mic still not available after USB Power Cycle.");
+
+          stopRecording();
+          cancelNextRestart();
+
+          if (!isMicConnected) return;
+
+          const uptimeInSeconds = os.uptime();
 
           if (uptimeInSeconds / 60 < 60) {
             logger.warn(
@@ -530,9 +531,13 @@ export class SystemService {
 
       await execPromise("sudo uhubctl -l 2 -a 0");
       await execPromise("sudo uhubctl -l 4 -a 0");
-      await waitForMs(2000); // Required delay for full power off
+
+      await waitForMs(3000); // Required delay for full power off
+
       await execPromise("sudo uhubctl -l 2 -a 1");
       await execPromise("sudo uhubctl -l 4 -a 1");
+
+      await waitForMs(3000);
 
       logger.info("✅ USB ports cycled successfully.");
     } catch (cycleErr) {
@@ -544,8 +549,8 @@ export class SystemService {
     usb.on("attach", async () => {
       logger.info("🔌 USB device attached");
 
-      // 1. Filter out events within 3.5 seconds of a power cycle
-      const suppressWindowMs = 3500;
+      // 1. Filter out events within 10 seconds of a power cycle
+      const suppressWindowMs = 10000;
       const now = Date.now();
       if (lastCycleTime && now - lastCycleTime < suppressWindowMs) {
         logger.info(
