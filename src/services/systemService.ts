@@ -6,7 +6,7 @@ import simpleGit from "simple-git";
 import { exec, spawn } from "child_process";
 import logger from "../utils/winston/logger";
 import util from "util";
-import { NotificationEvent, NotificationSevrice } from "./notificationService";
+import { NotificationEvent, NotificationService } from "./notificationService";
 import {
   cancelNextRestart,
   isMicActive,
@@ -18,10 +18,6 @@ import {
 import dayjs from "dayjs";
 import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
-import path from "path";
-import { existsSync } from "fs";
-import { unlink } from "fs/promises";
-
 const git = simpleGit();
 const execPromise = util.promisify(exec);
 
@@ -148,7 +144,7 @@ export class SystemService {
       });
 
       if (cpuUsagePercentage > CPU_THRESHOLD) {
-        await NotificationSevrice.sendHeartBeatToServer(
+        await NotificationService.sendHeartBeatToServer(
           NotificationEvent.DEVICE_CPU_ALARM,
           [
             {
@@ -267,15 +263,13 @@ export class SystemService {
 
   static async checkMicOnStart(isMicActive: boolean) {
     try {
-      logger.info(`cheking mic health on start isMicActive:${isMicActive}`);
       if (isMicActive) return;
       const isMicDetected = await this.isMicDetected();
-      logger.info(`cheking mic health on start isMicDetected:${isMicDetected}`);
-
       if (isMicDetected) {
+        logger.info("✅ Mic available via arecord");
         const isMicAvailable = await this.isMicAvailable();
         if (isMicAvailable) {
-          NotificationSevrice.sendHeartBeatToServer(
+          NotificationService.sendHeartBeatToServer(
             NotificationEvent.DEVICE_SYSTEM_MIC_ON,
           );
         }
@@ -323,11 +317,11 @@ export class SystemService {
           const isMicConnected = await this.isUsbAudioDeviceConnected();
 
           if (isMicConnected) {
-            await NotificationSevrice.sendHeartBeatToServer(
+            await NotificationService.sendHeartBeatToServer(
               NotificationEvent.DEVICE_SYSTEM_MIC_OFF,
             );
           } else {
-            await NotificationSevrice.sendHeartBeatToServer(
+            await NotificationService.sendHeartBeatToServer(
               NotificationEvent.DEVICE_HARDWARE_MIC_OFF,
             );
             return;
@@ -357,7 +351,7 @@ export class SystemService {
             cancelNextRestart();
             startMicHealthCheckInterval();
 
-            await NotificationSevrice.sendHeartBeatToServer(
+            await NotificationService.sendHeartBeatToServer(
               NotificationEvent.DEVICE_SYSTEM_MIC_OFF,
             );
             return;
@@ -385,7 +379,9 @@ export class SystemService {
       // if (platform === "win32") {
       //   command = `powershell -Command "Get-PnpDevice -Class 'AudioEndpoint' | Where-Object { $_.FriendlyName -like '*Microphone*' } | Select-Object -ExpandProperty FriendlyName"`;
       // }
-
+      logger.info(
+        "🎙️ Checking if microphone is detected and accessible using arecord...",
+      );
       const { stdout, stderr } = await execPromise("arecord -l");
 
       if (stderr || !stdout.includes("card")) {
@@ -401,20 +397,22 @@ export class SystemService {
   }
 
   static async isMicAvailable(): Promise<boolean> {
-    const filePath = path.join(os.tmpdir(), "temp_mic_check.wav");
-
     return new Promise((resolve) => {
       logger.info("🎙️ Checking mic availability...");
 
-      const arecord = spawn('arecord', [
-        '-c', '1',
-        '-r', '16000',
-        '-f', 'S16_LE',
-        '-t', 'raw',
-        '-D', 'plughw:2,0',
-        '--duration=1'
+      const arecord = spawn("arecord", [
+        "-c",
+        "1",
+        "-r",
+        "16000",
+        "-f",
+        "S16_LE",
+        "-t",
+        "raw",
+        "-D",
+        "plughw:2,0",
+        "--duration=1",
       ]);
-
 
       arecord.on("error", (err) => {
         logger.error("❌ Mic check process error:", err);
@@ -429,16 +427,8 @@ export class SystemService {
 
         await waitForMs(1100);
 
-        try {
-          if (existsSync(filePath)) {
-            await unlink(filePath);
-          }
-          logger.info("✅ Mic is available and responsive.");
-          resolve(true);
-        } catch (err) {
-          logger.error("❌ Failed to clean up mic test file:", err);
-          resolve(false);
-        }
+        logger.info("✅ Mic is available and responsive.");
+        resolve(true);
       });
     });
   }

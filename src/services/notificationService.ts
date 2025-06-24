@@ -36,7 +36,7 @@ interface APIBODY {
   meta_data?: METADATA[];
 }
 
-export class NotificationSevrice {
+export class NotificationService {
   static async sendHeartBeatToServer(
     event: NotificationEvent,
     meta_data?: METADATA[],
