@@ -500,15 +500,23 @@ export class SystemService {
   static async cycleAllUsbPorts() {
     try {
       logger.info("🔍 Checking for uhubctl...");
-
       await execPromise("which uhubctl");
-
-      logger.info("✅ uhubctl is installed.");
+      logger.info("✅ uhubctl is already installed.");
     } catch {
-      logger.warn("⚠️ uhubctl not found. Installing...");
+      logger.warn("⚠️ uhubctl not found. Installing from source...");
 
       try {
-        await execPromise("sudo apt update && sudo apt install -y uhubctl");
+        await execPromise("sudo apt update");
+        await execPromise(
+          "sudo apt install -y git build-essential libusb-1.0-0-dev",
+        );
+        await execPromise("rm -rf /tmp/uhubctl");
+        await execPromise(
+          "git clone https://github.com/mvp/uhubctl /tmp/uhubctl",
+        );
+        await execPromise("make -C /tmp/uhubctl");
+        await execPromise("sudo make install -C /tmp/uhubctl");
+
         logger.info("✅ uhubctl installed successfully.");
       } catch (installErr) {
         logger.error("❌ Failed to install uhubctl:", installErr);
@@ -518,9 +526,15 @@ export class SystemService {
 
     try {
       lastCycleTime = Date.now();
-      logger.info("🔌 Power cycling all USB ports using uhubctl...");
-      const { stdout } = await execPromise("sudo uhubctl -a cycle -p all");
-      logger.info("✅ USB ports cycled successfully:\n", stdout);
+      logger.info("🔌 Power cycling USB ports on hubs 2 and 4...");
+
+      await execPromise("sudo uhubctl -l 2 -a 0");
+      await execPromise("sudo uhubctl -l 4 -a 0");
+      await waitForMs(2000); // Required delay for full power off
+      await execPromise("sudo uhubctl -l 2 -a 1");
+      await execPromise("sudo uhubctl -l 4 -a 1");
+
+      logger.info("✅ USB ports cycled successfully.");
     } catch (cycleErr) {
       logger.error("❌ Failed to cycle USB ports:", cycleErr);
     }
