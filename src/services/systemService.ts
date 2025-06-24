@@ -559,6 +559,13 @@ export class SystemService {
         return;
       }
 
+      if (isCheckingSystemMic.isActive) {
+        logger.info(
+          `⚠️ USB attach ignored: handled by the central interrupt management function.`,
+        );
+        return;
+      }
+
       // 2. Avoid triggering restart if already active
       if (isMicActive) {
         logger.info("ℹ️ Mic is already active. No action needed.");
