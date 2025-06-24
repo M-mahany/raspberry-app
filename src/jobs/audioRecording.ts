@@ -37,7 +37,6 @@ export let isMicActive = false;
 
 // MIC AUDIO OPTIONS
 const micOptions: MicOptions = {
-  device: "plughw:2,0",
   rate: "16000",
   channels: "1",
   bitwidth: "16",
@@ -58,11 +57,13 @@ export const startRecording = async () => {
 
   await SystemService.checkMicOnStart(isMicActive);
 
-  recordingSession = true;
+  const device = (await SystemService.getDefaultMicDevice()) || "plughw:1,0";
 
-  micInstance = mic(micOptions);
+  micInstance = mic({ ...micOptions, device });
 
   micInputStream = micInstance.getAudioStream();
+
+  recordingSession = true;
 
   const fileName = `${Date.now()}.raw`;
   recordingFiles.add(fileName);

@@ -262,6 +262,26 @@ export class SystemService {
     });
   }
 
+  static async getDefaultMicDevice() {
+    try {
+      const { stdout } = await execPromise("arecord -l");
+      const lines = stdout.split("\n");
+
+      for (const line of lines) {
+        const match = line.match(/card (\d+): .*device (\d+):/i);
+        if (match) {
+          const card = match[1];
+          const device = match[2];
+          return `plughw:${card},${device}`;
+        }
+      }
+      return null; // No mic found
+    } catch (err) {
+      logger.error("Failed to get audio devices:", err);
+      return null;
+    }
+  }
+
   static async checkMicOnStart(isMicActive: boolean) {
     try {
       if (isMicActive) return;
@@ -402,6 +422,8 @@ export class SystemService {
 
     await waitForMs(1000);
 
+    const micDevice = await this.getDefaultMicDevice();
+
     return new Promise((resolve) => {
       logger.info("🎙️ Checking mic availability...");
 
@@ -415,7 +437,7 @@ export class SystemService {
         "-t",
         "raw",
         "-D",
-        "plughw:2,0",
+        micDevice || "plughw:1,0",
         "--duration=1",
       ]);
 
