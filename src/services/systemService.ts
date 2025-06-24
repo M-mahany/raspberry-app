@@ -406,18 +406,15 @@ export class SystemService {
     return new Promise((resolve) => {
       logger.info("🎙️ Checking mic availability...");
 
-      const arecord = spawn("arecord", [
-        "-D",
-        "default",
-        "-c",
-        "1",
-        "-r",
-        "16000",
-        "-f",
-        "S16_LE",
-        filePath,
-        "--duration=1",
+      const arecord = spawn('arecord', [
+        '-c', '1',
+        '-r', '16000',
+        '-f', 'S16_LE',
+        '-t', 'raw',
+        '-D', 'plughw:2,0',
+        '--duration=1'
       ]);
+
 
       arecord.on("error", (err) => {
         logger.error("❌ Mic check process error:", err);
