@@ -18,6 +18,7 @@ import {
 import dayjs from "dayjs";
 import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
+import { RecordingService } from "./recordingsService";
 const git = simpleGit();
 const execPromise = util.promisify(exec);
 
@@ -397,6 +398,10 @@ export class SystemService {
   }
 
   static async isMicAvailable(): Promise<boolean> {
+    await RecordingService.killExistingRecordings();
+
+    await waitForMs(1000);
+
     return new Promise((resolve) => {
       logger.info("🎙️ Checking mic availability...");
 
