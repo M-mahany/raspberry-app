@@ -8,6 +8,7 @@ import { getFileName } from "../utils/helpers";
 import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
 import { WriteStream } from "fs";
+import { flushQueueLoop } from "../services/notificationService";
 
 dotenv.config();
 
@@ -262,3 +263,7 @@ process.on("SIGINT", async () => {
   await stopRecording();
   process.exit(0);
 });
+
+// Initialize background retry loop to resend queued notifications
+// once internet connection (via socket) is restored
+flushQueueLoop();

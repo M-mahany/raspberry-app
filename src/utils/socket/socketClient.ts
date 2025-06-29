@@ -4,6 +4,8 @@ import logger from "../winston/logger";
 
 dotenv.config();
 
+export let isOnline = false;
+
 const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
     clientType: "device",
@@ -13,6 +15,7 @@ const socket = io(process.env.MAIN_SERVER_URL, {
 
 socket.on("connect", () => {
   logger.info(`✅ Successfully connected to WebSocket server: ${socket.id}`);
+  isOnline = true;
 });
 
 socket.on("connect_error", (error) => {
@@ -21,4 +24,5 @@ socket.on("connect_error", (error) => {
 
 socket.on("disconnect", (reason) => {
   logger.warn(`❌ Disconnected from server. Reason: ${reason}`);
+  isOnline = false;
 });

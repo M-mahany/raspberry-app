@@ -1,6 +1,8 @@
 import dayjs from "dayjs";
 import { serverAPI } from "../utils/config/voiceApiConfig";
 import logger from "../utils/winston/logger";
+import { isOnline } from "../utils/socket/socketClient";
+import { waitForMs } from "../utils/helpers";
 
 interface lastActivity {
   DEVICE_SYSTEM_MIC_OFF: null | number;
@@ -36,6 +38,47 @@ interface APIBODY {
   meta_data?: METADATA[];
 }
 
+let retryQueue: APIBODY[] = [];
+
+const addToRetryQueue = async (body: APIBODY) => {
+  const isMicEvent = (event: NotificationEvent) =>
+    event.includes("MIC_ON") || event.includes("MIC_OFF");
+
+  const isMicOff =
+    body.event === NotificationEvent.DEVICE_HARDWARE_MIC_OFF ||
+    body.event === NotificationEvent.DEVICE_SYSTEM_MIC_OFF;
+
+  if (isMicOff) {
+    retryQueue = retryQueue.filter((queueBody) => !isMicEvent(queueBody.event));
+  } else {
+    retryQueue = retryQueue.filter(
+      (queueBody) => queueBody.event !== body.event,
+    );
+  }
+
+  retryQueue.push(body);
+};
+
+export const flushQueueLoop = async () => {
+  while (true) {
+    if (!isOnline || retryQueue.length === 0) {
+      await waitForMs(5000);
+      continue;
+    }
+
+    const body = retryQueue.shift()!;
+
+    try {
+      await serverAPI.post("/notification/device", body);
+      logger.info(`✅ Flushed event: ${body.event}`);
+    } catch (error: any) {
+      logger.error(`Retry failed: ${error?.message || error}`);
+      retryQueue.unshift(body);
+      await waitForMs(2000);
+    }
+  }
+};
+
 export class NotificationService {
   static async sendHeartBeatToServer(
     event: NotificationEvent,
@@ -61,17 +104,17 @@ export class NotificationService {
     logger.info(`Sending notification! notifying server about ${event}`);
 
     lastActivity[event] = Date.now();
+    let apiBody: APIBODY = {
+      event,
+    };
     try {
-      let apiBody: APIBODY = {
-        event,
-      };
-
       if (meta_data) {
         apiBody.meta_data = meta_data;
       }
       await serverAPI.post("/notification/device", apiBody);
     } catch (error: any) {
       logger.error(`Error Sending HeartBeat ${error?.message || error}`);
+      addToRetryQueue(apiBody);
     }
   }
 }

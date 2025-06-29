@@ -38,7 +38,7 @@ let isCheckingSystemMic = {
 };
 
 let cpuReportedAT: number | null = null;
-const CPU_THRESHOLD = 30;
+const CPU_THRESHOLD = 70;
 
 let lastCycleTime: number | null = null;
 
