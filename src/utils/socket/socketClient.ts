@@ -1,6 +1,7 @@
 import { io } from "socket.io-client";
 import dotenv from "dotenv";
 import logger from "../winston/logger";
+import { isMicActive } from "../../jobs/audioRecording";
 
 dotenv.config();
 
@@ -9,6 +10,7 @@ export let isOnline = false;
 const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
     clientType: "device",
+    micStatus: isMicActive,
     accessToken: process.env.ACCESS_TOKEN,
   },
 });
