@@ -10,7 +10,7 @@ export let isOnline = false;
 const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
     clientType: "device",
-    micStatus: isMicActive,
+    micStatus: isMicActive ? 'active' : 'inActive',
     accessToken: process.env.ACCESS_TOKEN,
   },
 });
