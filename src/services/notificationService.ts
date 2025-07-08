@@ -30,7 +30,7 @@ let lastActivity = <LastActivity>{
 
 interface METADATA {
   key: string;
-  value: string | number;
+  value: string | number | boolean;
 }
 
 interface APIBODY {
@@ -157,7 +157,10 @@ export class NotificationService {
 
       // MIC_ON handling
       if (event.includes("MIC_ON")) {
-        const micState = deviceMicStates.get("MIC_OFF");
+        const micState = deviceMicStates.get("MIC_OFF") || {
+          isSent: false,
+          timeout: undefined,
+        };
 
         if (micState?.timeout) {
           clearTimeout(micState.timeout);
@@ -166,7 +169,10 @@ export class NotificationService {
 
         if (!micState?.isSent) {
           logger.info("Skipping MIC_ON: no prior MIC_OFF alert was sent.");
-          return;
+          apiBody.meta_data = [
+            ...(apiBody.meta_data || []),
+            { key: "skipNotification", value: true },
+          ];
         }
 
         micState.isSent = false;
