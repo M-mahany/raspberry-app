@@ -4,7 +4,7 @@ import logger from "../utils/winston/logger";
 import { isOnline } from "../utils/socket/socketClient";
 import { waitForMs } from "../utils/helpers";
 
-interface lastActivity {
+interface LastActivity {
   DEVICE_SYSTEM_MIC_OFF: null | number;
   DEVICE_SYSTEM_MIC_ON: null | number;
   DEVICE_HARDWARE_MIC_OFF: null | number;
@@ -20,7 +20,7 @@ export enum NotificationEvent {
   DEVICE_HARDWARE_MIC_ON = "DEVICE_HARDWARE_MIC_ON",
 }
 
-let lastActivity = <lastActivity>{
+let lastActivity = <LastActivity>{
   DEVICE_SYSTEM_MIC_OFF: null,
   DEVICE_SYSTEM_MIC_ON: null,
   DEVICE_HARDWARE_MIC_OFF: null,
@@ -39,6 +39,13 @@ interface APIBODY {
 }
 
 let retryQueue: APIBODY[] = [];
+
+const deviceMicStates = new Map<
+  string,
+  { isSent: boolean; timeout: NodeJS.Timeout | undefined }
+>();
+
+const MIC_EVENT_ALERT_DELAY_MS = 5 * 60 * 1000;
 
 const addToRetryQueue = async (body: APIBODY) => {
   const isMicEvent = (event: NotificationEvent) =>
@@ -59,7 +66,12 @@ const addToRetryQueue = async (body: APIBODY) => {
   retryQueue.push(body);
 };
 
+let flushing = false;
+
 export const flushQueueLoop = async () => {
+  if (flushing) return;
+  flushing = true;
+
   while (true) {
     if (!isOnline || retryQueue.length === 0) {
       await waitForMs(5000);
@@ -93,7 +105,7 @@ export class NotificationService {
       "second",
     );
     const bufferDuration =
-      event === NotificationEvent.DEVICE_CPU_ALARM ? 3600 : 10;
+      event === NotificationEvent.DEVICE_CPU_ALARM ? 3600 : 0; // Buffer 1 hour for CPU otherwise no buffer
 
     if (lastActivityDate && lastActivityDuration < bufferDuration) {
       logger.info(
@@ -111,6 +123,56 @@ export class NotificationService {
       if (meta_data) {
         apiBody.meta_data = meta_data;
       }
+
+      // MIC_OFF handling
+      if (event.includes("MIC_OFF")) {
+        const micState = deviceMicStates.get("MIC_OFF") || {
+          isSent: false,
+          timeout: undefined,
+        };
+
+        if (micState.timeout) {
+          logger.info("MIC_OFF event already pending. Skipping new timer.");
+          return;
+        }
+
+        micState.timeout = setTimeout(async () => {
+          try {
+            await serverAPI.post("/notification/device", apiBody);
+            micState.isSent = true;
+            logger.info("✅ MIC_OFF notification sent after delay.");
+          } catch (error: any) {
+            logger.error(`❌ Failed to send MIC_OFF: ${error.message}`);
+            addToRetryQueue(apiBody);
+          } finally {
+            micState.timeout = undefined;
+            deviceMicStates.set("MIC_OFF", micState);
+          }
+        }, MIC_EVENT_ALERT_DELAY_MS);
+
+        micState.isSent = false;
+        deviceMicStates.set("MIC_OFF", micState);
+        return;
+      }
+
+      // MIC_ON handling
+      if (event.includes("MIC_ON")) {
+        const micState = deviceMicStates.get("MIC_OFF");
+
+        if (micState?.timeout) {
+          clearTimeout(micState.timeout);
+          micState.timeout = undefined;
+        }
+
+        if (!micState?.isSent) {
+          logger.info("Skipping MIC_ON: no prior MIC_OFF alert was sent.");
+          return;
+        }
+
+        micState.isSent = false;
+        deviceMicStates.set("MIC_OFF", micState);
+      }
+
       await serverAPI.post("/notification/device", apiBody);
     } catch (error: any) {
       logger.error(`Error Sending HeartBeat ${error?.message || error}`);
