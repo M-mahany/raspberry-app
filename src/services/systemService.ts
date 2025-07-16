@@ -282,9 +282,9 @@ export class SystemService {
     }
   }
 
-  static async checkMicOnStart(isMicActive: boolean) {
+  static async checkMicOnStart(isMicOn: boolean) {
     try {
-      if (isMicActive) return;
+      if (isMicOn) return;
       const isMicDetected = await this.isMicDetected();
       if (isMicDetected) {
         logger.info("✅ Mic available via arecord");
@@ -297,6 +297,14 @@ export class SystemService {
       }
     } catch (err) {
       logger.error("Error Checking Mic onStart");
+    }
+  }
+
+  static async checkMicOnSocketConnect() {
+    if (isMicActive) {
+      NotificationService.sendHeartBeatToServer(
+        NotificationEvent.DEVICE_SYSTEM_MIC_ON,
+      );
     }
   }
 

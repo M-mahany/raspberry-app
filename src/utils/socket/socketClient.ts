@@ -1,7 +1,7 @@
 import { io } from "socket.io-client";
 import dotenv from "dotenv";
 import logger from "../winston/logger";
-import { isMicActive } from "../../jobs/audioRecording";
+import { SystemService } from "../../services/systemService";
 
 dotenv.config();
 
@@ -10,7 +10,7 @@ export let isOnline = false;
 const socket = io(process.env.MAIN_SERVER_URL, {
   query: {
     clientType: "device",
-    micStatus: isMicActive ? "active" : "inActive",
+    // micStatus: isMicActive ? "active" : "inActive",
     accessToken: process.env.ACCESS_TOKEN,
   },
 });
@@ -18,6 +18,7 @@ const socket = io(process.env.MAIN_SERVER_URL, {
 socket.on("connect", () => {
   logger.info(`✅ Successfully connected to WebSocket server: ${socket.id}`);
   isOnline = true;
+  SystemService.checkMicOnSocketConnect();
 });
 
 socket.on("connect_error", (error) => {
