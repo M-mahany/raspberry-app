@@ -48,6 +48,18 @@ export class RecordingService {
         logger.error(
           `🚨 Error uploading file ${getFileName(filePath)} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
         );
+        if (
+          isAxiosError(error) &&
+          error?.response?.data?.message?.includes("Invalid media file")
+        ) {
+          fs.unlink(filePath, (err) => {
+            if (err) {
+              logger.error(
+                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
+              );
+            }
+          });
+        }
       }
     }
   }
