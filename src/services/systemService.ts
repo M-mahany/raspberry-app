@@ -19,6 +19,7 @@ import dayjs from "dayjs";
 import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
 import { RecordingService } from "./recordingsService";
+
 const git = simpleGit();
 const execPromise = util.promisify(exec);
 
@@ -401,6 +402,17 @@ export class SystemService {
       );
     } finally {
       isCheckingSystemMic.isActive = false;
+    }
+  }
+
+  static async rebootDevice() {
+    try {
+      // wait 3 seconds before rebooting
+      await waitForMs(3000);
+
+      await execPromise("sudo reboot");
+    } catch (error: any) {
+      logger.error(`Error rebooting device ${error?.message || error}`);
     }
   }
 
