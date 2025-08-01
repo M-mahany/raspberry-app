@@ -27,7 +27,7 @@ export class RecordingService {
           logger.error(`🚨 Error deleting file after upload: ${err}`);
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       if (
         isAxiosError(error) &&
         error?.response?.data?.message?.includes(
@@ -46,7 +46,7 @@ export class RecordingService {
         });
       } else {
         logger.error(
-          `🚨 Error uploading file ${getFileName(filePath)} to server ${isAxiosError(error) ? error?.response?.data?.message : error}`,
+          `🚨 Error uploading file ${getFileName(filePath)} to server ${isAxiosError(error) ? error?.response?.data?.message : error?.message || error}`,
         );
         if (
           isAxiosError(error) &&
