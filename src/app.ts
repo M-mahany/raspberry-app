@@ -86,16 +86,13 @@ app.get("/reboot", async (_req: Request, res: Response) => {
 
 app.get("/refresh_tailscale", async (_req: Request, res: Response) => {
   try {
-
     SystemService.refreshTailscale();
 
     res.status(200).json({ message: "Tailscale successfully refreshed." });
   } catch (error: any) {
-    res
-      .status(500)
-      .json({
-        message: `Error refreshing Tailscale: ${error?.message || error}`,
-      });
+    res.status(500).json({
+      message: `Error refreshing Tailscale: ${error?.message || error}`,
+    });
   }
 });
 

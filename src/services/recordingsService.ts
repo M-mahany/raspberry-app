@@ -45,9 +45,7 @@ export class RecordingService {
           }
         });
       } else {
-        logger.error(
-          `🚨 Error uploading file ${getFileName(filePath)} to server ${isAxiosError(error) ? error?.response?.data?.message : error?.message || error}`,
-        );
+        `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`;
         if (
           isAxiosError(error) &&
           error?.response?.data?.message?.includes("Invalid media file")
