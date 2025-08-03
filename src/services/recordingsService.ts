@@ -17,6 +17,7 @@ export class RecordingService {
         headers: {
           ...formData.getHeaders(),
         },
+        timeout: 15 * 60 * 1000,
       });
 
       logger.info(
