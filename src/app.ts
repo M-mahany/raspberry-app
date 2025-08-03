@@ -15,6 +15,8 @@ app.get("/", (_req: Request, res: Response) => {
   res.send("Raspberry Pi App!");
 });
 
+app.use(express.json())
+
 app.get("/system-health", async (_req: Request, res: Response) => {
   try {
     const data = await SystemService.getSystemHealth();
