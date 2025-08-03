@@ -74,18 +74,18 @@ app.get("/update-system", async (_req: Request, res: Response) => {
   }
 });
 
-app.get("/reboot", async (_req: Request, res: Response) => {
-  try {
-    SystemService.rebootDevice();
-    res
-      .status(200)
-      .json({ message: "Device will be rebooted in 3 seconds..." });
-  } catch (error: any) {
-    res
-      .status(500)
-      .json({ message: `Error rebooting device: ${error?.message || error}` });
-  }
-});
+// app.get("/reboot", async (_req: Request, res: Response) => {
+//   try {
+//     SystemService.rebootDevice();
+//     res
+//       .status(200)
+//       .json({ message: "Device will be rebooted in 3 seconds..." });
+//   } catch (error: any) {
+//     res
+//       .status(500)
+//       .json({ message: `Error rebooting device: ${error?.message || error}` });
+//   }
+// });
 
 // app.get("/refresh_tailscale", async (_req: Request, res: Response) => {
 //   try {
