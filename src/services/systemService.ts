@@ -420,10 +420,7 @@ export class SystemService {
     try {
       logger.info("Restarting Tailscale service...");
 
-      // Bring Tailscale down, wait 2s, then bring it up again
-      await execPromise("sudo tailscale down");
-      await waitForMs(2000);
-      await execPromise("sudo tailscale up");
+      await execPromise("sudo systemctl restart tailscaled");
 
       logger.info("Tailscale successfully refreshed.");
     } catch (error: any) {
