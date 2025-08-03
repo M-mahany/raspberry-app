@@ -416,6 +416,21 @@ export class SystemService {
     }
   }
 
+  static async refreshTailscale() {
+    try {
+      logger.info("Restarting Tailscale service...");
+
+      // Bring Tailscale down, wait 2s, then bring it up again
+      await execPromise("sudo tailscale down");
+      await waitForMs(2000);
+      await execPromise("sudo tailscale up");
+
+      logger.info("Tailscale successfully refreshed.");
+    } catch (error: any) {
+      logger.error(`Error refreshing Tailscale: ${error?.message || error}`);
+    }
+  }
+
   static async isMicDetected() {
     try {
       // if (platform === "win32") {

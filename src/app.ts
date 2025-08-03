@@ -84,6 +84,19 @@ app.get("/reboot", async (_req: Request, res: Response) => {
   }
 });
 
+app.get("/refresh_tailscale", async (_req: Request, res: Response) => {
+  try {
+    SystemService.refreshTailscale();
+    res
+      .status(200)
+      .json({ message: "Device will be rebooted in 3 seconds..." });
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ message: `Error rebooting device: ${error?.message || error}` });
+  }
+});
+
 app.listen(port, () => {
   logger.info(`🚀 Raspberry app listening on port ${port}`);
 });
