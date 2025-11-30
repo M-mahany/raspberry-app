@@ -147,6 +147,17 @@ app.get("/current_user", (_req: Request, res: Response) => {
   });
 });
 
+
+app.get("/check_ssh", (_req, res) => {
+  exec("nc -zv 127.0.0.1 22", (err, stdout, stderr) => {
+    if (err) {
+      res.json({ ssh: false, info: stderr.trim() });
+      return;
+    }
+    res.json({ ssh: true, info: stdout.trim() });
+  });
+});
+
 app.listen(port, () => {
   logger.info(`🚀 Raspberry app listening on port ${port}`);
 });
