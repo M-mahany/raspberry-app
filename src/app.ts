@@ -136,6 +136,17 @@ app.post("/reset_password", (req: Request, res: Response) => {
   });
 });
 
+app.get("/current_user", (_req: Request, res: Response) => {
+  exec("whoami", (error, stdout, stderr) => {
+    if (error) {
+      console.error("Error getting username:", stderr);
+      res.status(500).json({ error: stderr.trim() || "Command failed" });
+      return;
+    }
+    res.json({ username: stdout.trim() });
+  });
+});
+
 app.listen(port, () => {
   logger.info(`🚀 Raspberry app listening on port ${port}`);
 });
