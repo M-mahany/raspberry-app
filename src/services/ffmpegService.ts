@@ -12,6 +12,7 @@ interface MetadataMedia {
   fileSize: number;
 }
 
+// Metadata for conversion results - new interface for teh conversion results
 interface ConversionResult {
   transcriptFile: string | null;
   diarizationFile: string | null;
