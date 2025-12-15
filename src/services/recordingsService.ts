@@ -6,13 +6,39 @@ import { ffmpegService } from "./ffmpegService";
 import logger from "../utils/winston/logger";
 import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
+import { DOAService } from "./doaService";
+
+interface DOAMetadata {
+  doaAngle?: number | null;
+  doaData?: Array<{ angle: number; timestamp: number }>;
+}
 
 export class RecordingService {
-  static async uploadRecording(filePath: string): Promise<void> {
+  static async uploadRecording(
+    filePath: string,
+    doaMetadata?: DOAMetadata,
+    fileType: "transcript" | "diarization" = "transcript",
+  ): Promise<void> {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
+      formData.append("fileType", fileType);
+
+      // Add DOA metadata for diarization files
+      if (fileType === "diarization" && doaMetadata) {
+        if (doaMetadata.doaAngle !== undefined && doaMetadata.doaAngle !== null) {
+          formData.append("doaAngle", doaMetadata.doaAngle.toString());
+        }
+        if (doaMetadata.doaData && doaMetadata.doaData.length > 0) {
+          formData.append("doaData", JSON.stringify(doaMetadata.doaData));
+        }
+      }
+
+      // Add recording ID to link transcript and diarization files
+      const recordingId = getFileName(filePath).split("_")[0];
+      formData.append("recordingId", recordingId);
+
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
           ...formData.getHeaders(),
@@ -20,7 +46,7 @@ export class RecordingService {
       });
 
       logger.info(
-        `✅ Uploaded ${getFileName(filePath)} successfully to the server:`,
+        `✅ Uploaded ${getFileName(filePath)} (${fileType}) successfully to the server`,
       );
       fs.unlink(filePath, (err) => {
         if (err) {
@@ -66,13 +92,50 @@ export class RecordingService {
   static async convertAndUploadToServer(
     rawFile: string,
     currentRecordingFileSet?: Set<string>,
+    doaMetadata?: DOAMetadata,
   ) {
     try {
-      const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
-      if (mp3File) {
-        logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
-        await this.uploadRecording(mp3File);
+      // Check if file is multi-channel (6 channels) or single channel
+      // For backward compatibility, try multi-channel conversion first
+      const conversionResult =
+        await ffmpegService.convertMultiChannelAudio(rawFile);
+
+      if (
+        conversionResult.transcriptFile &&
+        conversionResult.diarizationFile
+      ) {
+        // Multi-channel recording: upload both files
+        logger.info(
+          `⬆️ Uploading transcript file: ${getFileName(conversionResult.transcriptFile)} to server...`,
+        );
+        await this.uploadRecording(
+          conversionResult.transcriptFile,
+          undefined,
+          "transcript",
+        );
+
+        logger.info(
+          `⬆️ Uploading diarization file: ${getFileName(conversionResult.diarizationFile)} to server...`,
+        );
+        await this.uploadRecording(
+          conversionResult.diarizationFile,
+          doaMetadata,
+          "diarization",
+        );
+      } else {
+        // Fallback to single-channel conversion (backward compatibility)
+        logger.warn(
+          `⚠️ Multi-channel conversion failed, falling back to single-channel conversion`,
+        );
+        const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
+        if (mp3File) {
+          logger.info(
+            `⬆️ Uploading file: ${getFileName(mp3File)} to server...`,
+          );
+          await this.uploadRecording(mp3File, undefined, "transcript");
+        }
       }
+
       if (currentRecordingFileSet) {
         currentRecordingFileSet?.delete(getFileName(rawFile));
       }
