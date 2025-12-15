@@ -6,7 +6,7 @@ import { ffmpegService } from "./ffmpegService";
 import logger from "../utils/winston/logger";
 import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
-import { DOAService } from "./doaService";
+// import { DOAService } from "./doaService";
 
 interface DOAMetadata {
   doaAngle?: number | null;

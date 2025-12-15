@@ -119,7 +119,7 @@ export class ffmpegService {
   private static async convertChannel0ToMp3(
     rawFile: string,
     outputFile: string,
-  ): Promise<boolean> {
+  ): Promise<boolean | unknown> {
     return new Promise((resolve, reject) => {
       ffmpeg()
         .input(rawFile)
@@ -164,7 +164,7 @@ export class ffmpegService {
   private static async convertChannels1To4ToWav(
     rawFile: string,
     outputFile: string,
-  ): Promise<boolean> {
+  ): Promise<boolean | unknown > {
     return new Promise((resolve, reject) => {
       ffmpeg()
         .input(rawFile)
