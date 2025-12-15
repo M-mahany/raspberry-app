@@ -2,6 +2,7 @@ import { usb } from "usb";
 import logger from "../utils/winston/logger";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { Buffer } from "buffer";
 
 const execPromise = promisify(exec);
 
@@ -76,27 +77,38 @@ export class DOAService {
 
       iface.claim();
 
-      // Read DOAANGLE parameter
-      // Control transfer: bmRequestType, bRequest, wValue, wIndex, data_or_length
-      const result = device.controlTransfer(
-        CONTROL_REQUEST_TYPE,
-        CONTROL_REQUEST,
-        CONTROL_VALUE,
-        CONTROL_INDEX,
-        4, // 4 bytes for int32
-      );
+      // Read DOAANGLE parameter using callback-based controlTransfer
+      // Control transfer: bmRequestType, bRequest, wValue, wIndex, data_or_length, callback
+      return new Promise<number | null>((resolve) => {
+        device.controlTransfer(
+          CONTROL_REQUEST_TYPE,
+          CONTROL_REQUEST,
+          CONTROL_VALUE,
+          CONTROL_INDEX,
+          4, // 4 bytes for int32
+          (error, buffer) => {
+            iface.release(true);
+            device.close();
 
-      iface.release(true);
-      device.close();
+            if (error) {
+              logger.debug(
+                `⚠️ USB control transfer error: ${error.message}`,
+              );
+              return resolve(null);
+            }
 
-      if (result && result.length >= 4) {
-        // Parse 32-bit signed integer (little-endian)
-        const angle = result.readInt32LE(0);
-        logger.debug(`📡 DOA Angle read via Node USB: ${angle}°`);
-        return angle;
-      }
-
-      return null;
+            // Handle buffer - can be number or Buffer
+            if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
+              // Parse 32-bit signed integer (little-endian)
+              const angle = buffer.readInt32LE(0);
+              logger.debug(`📡 DOA Angle read via Node USB: ${angle}°`);
+              resolve(angle);
+            } else {
+              resolve(null);
+            }
+          },
+        );
+      });
     } catch (usbError: any) {
       logger.debug(
         `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`,
