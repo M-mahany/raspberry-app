@@ -6,7 +6,6 @@ import { ffmpegService } from "./ffmpegService";
 import logger from "../utils/winston/logger";
 import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
-// import { DOAService } from "./doaService";
 
 interface DOAMetadata {
   doaAngle?: number | null;
@@ -17,7 +16,7 @@ export class RecordingService {
   static async uploadRecording(
     filePath: string,
     doaMetadata?: DOAMetadata,
-    fileType: "transcript" | "diarization" = "transcript",
+    fileType: "transcript" | "diarization" = "transcript"
   ): Promise<void> {
     try {
       const formData = new FormData();
@@ -27,7 +26,10 @@ export class RecordingService {
 
       // Add DOA metadata for diarization files
       if (fileType === "diarization" && doaMetadata) {
-        if (doaMetadata.doaAngle !== undefined && doaMetadata.doaAngle !== null) {
+        if (
+          doaMetadata.doaAngle !== undefined &&
+          doaMetadata.doaAngle !== null
+        ) {
           formData.append("doaAngle", doaMetadata.doaAngle.toString());
         }
         if (doaMetadata.doaData && doaMetadata.doaData.length > 0) {
@@ -46,7 +48,7 @@ export class RecordingService {
       });
 
       logger.info(
-        `✅ Uploaded ${getFileName(filePath)} (${fileType}) successfully to the server`,
+        `✅ Uploaded ${getFileName(filePath)} (${fileType}) successfully to the server`
       );
       fs.unlink(filePath, (err) => {
         if (err) {
@@ -57,22 +59,22 @@ export class RecordingService {
       if (
         isAxiosError(error) &&
         error?.response?.data?.message?.includes(
-          "already exists for this recording.",
+          "already exists for this recording."
         )
       ) {
         fs.unlink(filePath, (err) => {
           logger.error(
-            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
+            `🚨File: ${getFileName(filePath)}, already uploaded to the server`
           );
           if (err) {
             logger.error(
-              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
+              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`
             );
           }
         });
       } else {
         logger.error(
-          `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
+          `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`
         );
         if (
           isAxiosError(error) &&
@@ -81,7 +83,7 @@ export class RecordingService {
           fs.unlink(filePath, (err) => {
             if (err) {
               logger.error(
-                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
+                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`
               );
             }
           });
@@ -92,7 +94,7 @@ export class RecordingService {
   static async convertAndUploadToServer(
     rawFile: string,
     currentRecordingFileSet?: Set<string>,
-    doaMetadata?: DOAMetadata,
+    doaMetadata?: DOAMetadata
   ) {
     try {
       // Check if file is multi-channel (6 channels) or single channel
@@ -100,37 +102,34 @@ export class RecordingService {
       const conversionResult =
         await ffmpegService.convertMultiChannelAudio(rawFile);
 
-      if (
-        conversionResult.transcriptFile &&
-        conversionResult.diarizationFile
-      ) {
+      if (conversionResult.transcriptFile && conversionResult.diarizationFile) {
         // Multi-channel recording: upload both files
         logger.info(
-          `⬆️ Uploading transcript file: ${getFileName(conversionResult.transcriptFile)} to server...`,
+          `⬆️ Uploading transcript file: ${getFileName(conversionResult.transcriptFile)} to server...`
         );
         await this.uploadRecording(
           conversionResult.transcriptFile,
           undefined,
-          "transcript",
+          "transcript"
         );
 
         logger.info(
-          `⬆️ Uploading diarization file: ${getFileName(conversionResult.diarizationFile)} to server...`,
+          `⬆️ Uploading diarization file: ${getFileName(conversionResult.diarizationFile)} to server...`
         );
         await this.uploadRecording(
           conversionResult.diarizationFile,
           doaMetadata,
-          "diarization",
+          "diarization"
         );
       } else {
         // Fallback to single-channel conversion (backward compatibility)
         logger.warn(
-          `⚠️ Multi-channel conversion failed, falling back to single-channel conversion`,
+          `⚠️ Multi-channel conversion failed, falling back to single-channel conversion`
         );
         const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
         if (mp3File) {
           logger.info(
-            `⬆️ Uploading file: ${getFileName(mp3File)} to server...`,
+            `⬆️ Uploading file: ${getFileName(mp3File)} to server...`
           );
           await this.uploadRecording(mp3File, undefined, "transcript");
         }
@@ -141,7 +140,7 @@ export class RecordingService {
       }
     } catch (error) {
       logger.error(
-        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`
       );
     }
   }
@@ -175,7 +174,7 @@ export class RecordingService {
           logger.info(`🛑 Killed arecord process PID: ${pid}`);
         } catch (killErr: any) {
           logger.error(
-            `❌ Failed to kill PID ${pid}. Error: ${killErr?.message || killErr}`,
+            `❌ Failed to kill PID ${pid}. Error: ${killErr?.message || killErr}`
           );
         }
       }
@@ -190,7 +189,7 @@ export class RecordingService {
         logger.error(
           `🚨 Error checking for existing arecord processes: ${
             error.message || error
-          }`,
+          }`
         );
       }
     }
