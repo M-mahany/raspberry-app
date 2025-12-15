@@ -668,6 +668,701 @@ micMonitor() function:
 
 ---
 
+## 📝 Transcription & Speaker Diarization Flow
+
+### Overview
+
+This section explains how to combine Whisper transcription output with speaker diarization from the 4-channel WAV file to determine **which speaker spoke in each second** of the recording.
+
+---
+
+### Complete Pipeline Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 1: Recording (Raspberry Pi)                             │
+│                                                              │
+│ Input: ReSpeaker USB Mic Array (6 channels)                  │
+│ Output: Multi-channel RAW file (6 channels, 16kHz, 16-bit) │
+│ File: {timestamp}.raw                                       │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 2: Channel Splitting                                  │
+│                                                              │
+│ Channel 0 → {timestamp}_transcript.mp3 (mono, 16kHz)      │
+│ Channels 1-4 → {timestamp}_diarization.wav (4-ch, 16kHz)  │
+│ Channel 5 → Discarded                                      │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+        ┌───────────────┴───────────────┐
+        ↓                               ↓
+┌───────────────────────┐   ┌───────────────────────┐
+│ STEP 3A: Whisper      │   │ STEP 3B: Diarization  │
+│ Transcription          │   │ Speaker Detection     │
+│                        │   │                       │
+│ Input: MP3 (Channel 0) │   │ Input: WAV (Ch 1-4)  │
+│ Output: Transcript     │   │ Output: Speaker       │
+│ with timestamps        │   │ segments with times   │
+└───────────────────────┘   └───────────────────────┘
+        ↓                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 4: Alignment & Mapping                                 │
+│                                                              │
+│ Combine transcript segments with speaker segments          │
+│ Map "who said what" using time alignment                    │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STEP 5: Final Output                                        │
+│                                                              │
+│ Speaker-labeled transcript with timestamps                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Step-by-Step Detailed Flow
+
+#### **STEP 1: Recording & File Generation**
+
+**Files Created:**
+- `{timestamp}_transcript.mp3` - Channel 0 (processed audio, mono, 16kHz)
+- `{timestamp}_diarization.wav` - Channels 1-4 (raw mics, 4-channel, 16kHz)
+
+**Important:** Both files share the **same timestamp** and are **time-synchronized** (same start time, same duration).
+
+---
+
+#### **STEP 2: Whisper Transcription**
+
+**Input:** `{timestamp}_transcript.mp3`
+
+**Whisper Output Format (JSON):**
+```json
+{
+  "text": "Hello, how are you? I'm doing great, thanks.",
+  "segments": [
+    {
+      "id": 0,
+      "start": 0.0,
+      "end": 2.5,
+      "text": "Hello, how are you?",
+      "words": [
+        {"word": "Hello", "start": 0.0, "end": 0.5},
+        {"word": "how", "start": 0.6, "end": 0.8},
+        {"word": "are", "start": 0.9, "end": 1.1},
+        {"word": "you", "start": 1.2, "end": 1.5}
+      ]
+    },
+    {
+      "id": 1,
+      "start": 2.6,
+      "end": 5.2,
+      "text": "I'm doing great, thanks.",
+      "words": [
+        {"word": "I'm", "start": 2.6, "end": 2.8},
+        {"word": "doing", "start": 2.9, "end": 3.2},
+        {"word": "great", "start": 3.3, "end": 3.7},
+        {"word": "thanks", "start": 3.8, "end": 4.2}
+      ]
+    }
+  ]
+}
+```
+
+**Key Fields:**
+- `segments[].start` - Start time in seconds
+- `segments[].end` - End time in seconds
+- `segments[].text` - Transcribed text for that segment
+- `segments[].words[]` - Word-level timestamps (optional, more precise)
+
+---
+
+#### **STEP 3: Speaker Diarization**
+
+**Input:** `{timestamp}_diarization.wav` (4-channel WAV)
+
+**Diarization Process:**
+
+1. **Load 4-channel WAV file**
+   - Channel 0: Microphone 1
+   - Channel 1: Microphone 2
+   - Channel 2: Microphone 3
+   - Channel 3: Microphone 4
+
+2. **Extract speaker segments** using any diarization algorithm:
+   - **TDOA-based** (Time Difference of Arrival)
+   - **Beamforming** (steer beams toward speakers)
+   - **Clustering** (group similar audio segments)
+   - **ML-based** (pyannote.audio, SpeechBrain, etc.)
+
+**Diarization Output Format (Example):**
+```json
+{
+  "speakers": [
+    {
+      "speaker_id": "SPEAKER_00",
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 2.5,
+          "confidence": 0.95
+        },
+        {
+          "start": 6.1,
+          "end": 8.3,
+          "confidence": 0.92
+        }
+      ]
+    },
+    {
+      "speaker_id": "SPEAKER_01",
+      "segments": [
+        {
+          "start": 2.6,
+          "end": 5.2,
+          "confidence": 0.88
+        },
+        {
+          "start": 8.5,
+          "end": 12.0,
+          "confidence": 0.90
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Fields:**
+- `speakers[].speaker_id` - Unique identifier for each speaker
+- `speakers[].segments[].start` - Start time in seconds
+- `speakers[].segments[].end` - End time in seconds
+- `speakers[].segments[].confidence` - Confidence score (0-1)
+
+---
+
+#### **STEP 4: Alignment & Mapping**
+
+**Goal:** Map each transcript segment to the correct speaker using time alignment.
+
+**Algorithm:**
+
+```python
+def align_transcript_with_speakers(whisper_segments, diarization_segments):
+    """
+    Align Whisper transcript segments with speaker diarization segments.
+    
+    Args:
+        whisper_segments: List of transcript segments with start/end times
+        diarization_segments: List of speaker segments with start/end times
+    
+    Returns:
+        List of aligned segments with speaker labels
+    """
+    aligned_segments = []
+    
+    for transcript_seg in whisper_segments:
+        transcript_start = transcript_seg['start']
+        transcript_end = transcript_seg['end']
+        
+        # Find which speaker was active during this time segment
+        speaker_id = find_speaker_for_time_range(
+            transcript_start, 
+            transcript_end, 
+            diarization_segments
+        )
+        
+        aligned_segments.append({
+            'start': transcript_start,
+            'end': transcript_end,
+            'text': transcript_seg['text'],
+            'speaker': speaker_id,
+            'confidence': calculate_overlap_confidence(
+                transcript_seg, 
+                speaker_id, 
+                diarization_segments
+            )
+        })
+    
+    return aligned_segments
+
+
+def find_speaker_for_time_range(start, end, diarization_segments):
+    """
+    Find which speaker was active during a given time range.
+    
+    Strategy:
+    1. Find all speaker segments that overlap with [start, end]
+    2. Calculate overlap percentage for each speaker
+    3. Return speaker with highest overlap
+    """
+    speaker_overlaps = {}
+    
+    for speaker_id, segments in diarization_segments.items():
+        total_overlap = 0
+        
+        for seg in segments:
+            # Calculate overlap between transcript segment and speaker segment
+            overlap_start = max(start, seg['start'])
+            overlap_end = min(end, seg['end'])
+            
+            if overlap_start < overlap_end:
+                overlap_duration = overlap_end - overlap_start
+                total_overlap += overlap_duration
+        
+        speaker_overlaps[speaker_id] = total_overlap
+    
+    # Return speaker with maximum overlap
+    if speaker_overlaps:
+        return max(speaker_overlaps.items(), key=lambda x: x[1])[0]
+    else:
+        return "UNKNOWN"
+
+
+def calculate_overlap_confidence(transcript_seg, speaker_id, diarization_segments):
+    """
+    Calculate confidence score for speaker assignment.
+    
+    Based on:
+    - Overlap percentage (how much of transcript segment overlaps with speaker segment)
+    - Diarization confidence score
+    """
+    transcript_duration = transcript_seg['end'] - transcript_seg['start']
+    
+    if speaker_id not in diarization_segments:
+        return 0.0
+    
+    total_overlap = 0
+    max_confidence = 0
+    
+    for seg in diarization_segments[speaker_id]:
+        overlap_start = max(transcript_seg['start'], seg['start'])
+        overlap_end = min(transcript_seg['end'], seg['end'])
+        
+        if overlap_start < overlap_end:
+            overlap_duration = overlap_end - overlap_start
+            total_overlap += overlap_duration
+            max_confidence = max(max_confidence, seg.get('confidence', 0.5))
+    
+    overlap_percentage = total_overlap / transcript_duration if transcript_duration > 0 else 0
+    
+    # Combined confidence: overlap percentage * diarization confidence
+    return overlap_percentage * max_confidence
+```
+
+**Example Alignment:**
+
+**Whisper Segments:**
+```
+Segment 1: [0.0s - 2.5s] "Hello, how are you?"
+Segment 2: [2.6s - 5.2s] "I'm doing great, thanks."
+```
+
+**Diarization Segments:**
+```
+SPEAKER_00: [0.0s - 2.5s]
+SPEAKER_01: [2.6s - 5.2s]
+```
+
+**Aligned Output:**
+```json
+[
+  {
+    "start": 0.0,
+    "end": 2.5,
+    "text": "Hello, how are you?",
+    "speaker": "SPEAKER_00",
+    "confidence": 0.95
+  },
+  {
+    "start": 2.6,
+    "end": 5.2,
+    "text": "I'm doing great, thanks.",
+    "speaker": "SPEAKER_01",
+    "confidence": 0.88
+  }
+]
+```
+
+---
+
+#### **STEP 5: Handling Edge Cases**
+
+##### **Case 1: Multiple Speakers in One Transcript Segment**
+
+**Situation:** One transcript segment spans multiple speaker segments.
+
+**Example:**
+```
+Transcript: [0.0s - 5.0s] "Hello, how are you? I'm doing great."
+Diarization: 
+  SPEAKER_00: [0.0s - 2.5s]
+  SPEAKER_01: [2.6s - 5.0s]
+```
+
+**Solution Options:**
+
+1. **Split transcript segment** at speaker boundaries:
+   ```json
+   [
+     {
+       "start": 0.0,
+       "end": 2.5,
+       "text": "Hello, how are you?",
+       "speaker": "SPEAKER_00"
+     },
+     {
+       "start": 2.6,
+       "end": 5.0,
+       "text": "I'm doing great.",
+       "speaker": "SPEAKER_01"
+     }
+   ]
+   ```
+
+2. **Assign to dominant speaker** (speaker with most overlap):
+   ```json
+   [
+     {
+       "start": 0.0,
+       "end": 5.0,
+       "text": "Hello, how are you? I'm doing great.",
+       "speaker": "SPEAKER_00",  // 2.5s overlap vs 2.4s overlap
+       "confidence": 0.50  // Lower confidence due to mixed speakers
+     }
+   ]
+   ```
+
+##### **Case 2: Overlapping Speakers**
+
+**Situation:** Multiple speakers talking simultaneously.
+
+**Example:**
+```
+Diarization:
+  SPEAKER_00: [0.0s - 3.0s]
+  SPEAKER_01: [2.0s - 4.0s]  // Overlaps with SPEAKER_00
+```
+
+**Solution:** Use word-level timestamps from Whisper (if available) for more precise alignment, or assign to the speaker with highest confidence during overlap.
+
+##### **Case 3: No Speaker Detected**
+
+**Situation:** Transcript segment has no corresponding speaker segment.
+
+**Solution:** Assign to "UNKNOWN" speaker with low confidence, or use DOA data to estimate speaker position.
+
+---
+
+#### **STEP 6: Final Output Format**
+
+**Complete Speaker-Labeled Transcript:**
+
+```json
+{
+  "recording_id": "1704067200000",
+  "duration": 12.5,
+  "speakers": {
+    "SPEAKER_00": {
+      "total_time": 5.2,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 2.5,
+          "text": "Hello, how are you?",
+          "confidence": 0.95
+        },
+        {
+          "start": 6.1,
+          "end": 8.8,
+          "text": "That sounds great!",
+          "confidence": 0.92
+        }
+      ]
+    },
+    "SPEAKER_01": {
+      "total_time": 7.3,
+      "segments": [
+        {
+          "start": 2.6,
+          "end": 5.2,
+          "text": "I'm doing great, thanks.",
+          "confidence": 0.88
+        },
+        {
+          "start": 8.5,
+          "end": 12.0,
+          "text": "Let's meet tomorrow then.",
+          "confidence": 0.90
+        }
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "time": "0:00",
+      "speaker": "SPEAKER_00",
+      "text": "Hello, how are you?"
+    },
+    {
+      "time": "0:03",
+      "speaker": "SPEAKER_01",
+      "text": "I'm doing great, thanks."
+    },
+    {
+      "time": "0:06",
+      "speaker": "SPEAKER_00",
+      "text": "That sounds great!"
+    },
+    {
+      "time": "0:09",
+      "speaker": "SPEAKER_01",
+      "text": "Let's meet tomorrow then."
+    }
+  ]
+}
+```
+
+---
+
+### Implementation Example (Python)
+
+```python
+import json
+from typing import List, Dict, Any
+
+def process_recording(transcript_file: str, diarization_file: str) -> Dict[str, Any]:
+    """
+    Main function to combine Whisper transcript with speaker diarization.
+    
+    Args:
+        transcript_file: Path to Whisper JSON output
+        diarization_file: Path to diarization JSON output
+    
+    Returns:
+        Combined speaker-labeled transcript
+    """
+    # Load files
+    with open(transcript_file, 'r') as f:
+        whisper_data = json.load(f)
+    
+    with open(diarization_file, 'r') as f:
+        diarization_data = json.load(f)
+    
+    # Convert diarization to time-indexed format
+    speaker_segments = index_speakers_by_time(diarization_data)
+    
+    # Align transcript with speakers
+    aligned_segments = align_transcript_with_speakers(
+        whisper_data['segments'],
+        speaker_segments
+    )
+    
+    # Build final output
+    result = build_final_output(aligned_segments, whisper_data)
+    
+    return result
+
+
+def index_speakers_by_time(diarization_data: Dict) -> Dict[str, List[Dict]]:
+    """
+    Index speaker segments by speaker ID for easy lookup.
+    """
+    indexed = {}
+    
+    for speaker in diarization_data['speakers']:
+        speaker_id = speaker['speaker_id']
+        indexed[speaker_id] = speaker['segments']
+    
+    return indexed
+
+
+def align_transcript_with_speakers(
+    transcript_segments: List[Dict],
+    speaker_segments: Dict[str, List[Dict]]
+) -> List[Dict]:
+    """
+    Align each transcript segment with the appropriate speaker.
+    """
+    aligned = []
+    
+    for seg in transcript_segments:
+        start = seg['start']
+        end = seg['end']
+        
+        # Find best matching speaker
+        speaker_id, confidence = find_best_speaker_match(
+            start, end, speaker_segments
+        )
+        
+        aligned.append({
+            'start': start,
+            'end': end,
+            'text': seg['text'],
+            'speaker': speaker_id,
+            'confidence': confidence
+        })
+    
+    return aligned
+
+
+def find_best_speaker_match(
+    start: float,
+    end: float,
+    speaker_segments: Dict[str, List[Dict]]
+) -> tuple[str, float]:
+    """
+    Find the speaker with the highest overlap for a given time range.
+    """
+    best_speaker = "UNKNOWN"
+    best_overlap = 0
+    best_confidence = 0
+    
+    segment_duration = end - start
+    
+    for speaker_id, segments in speaker_segments.items():
+        total_overlap = 0
+        max_conf = 0
+        
+        for seg in segments:
+            seg_start = seg['start']
+            seg_end = seg['end']
+            seg_conf = seg.get('confidence', 0.5)
+            
+            # Calculate overlap
+            overlap_start = max(start, seg_start)
+            overlap_end = min(end, seg_end)
+            
+            if overlap_start < overlap_end:
+                overlap_duration = overlap_end - overlap_start
+                total_overlap += overlap_duration
+                max_conf = max(max_conf, seg_conf)
+        
+        # Calculate overlap percentage
+        overlap_pct = total_overlap / segment_duration if segment_duration > 0 else 0
+        combined_confidence = overlap_pct * max_conf
+        
+        if combined_confidence > best_overlap:
+            best_overlap = combined_confidence
+            best_speaker = speaker_id
+            best_confidence = combined_confidence
+    
+    return best_speaker, best_confidence
+
+
+def build_final_output(
+    aligned_segments: List[Dict],
+    whisper_data: Dict
+) -> Dict[str, Any]:
+    """
+    Build the final structured output.
+    """
+    # Group by speaker
+    speakers = {}
+    timeline = []
+    
+    for seg in aligned_segments:
+        speaker_id = seg['speaker']
+        
+        if speaker_id not in speakers:
+            speakers[speaker_id] = {
+                'total_time': 0,
+                'segments': []
+            }
+        
+        duration = seg['end'] - seg['start']
+        speakers[speaker_id]['total_time'] += duration
+        speakers[speaker_id]['segments'].append({
+            'start': seg['start'],
+            'end': seg['end'],
+            'text': seg['text'],
+            'confidence': seg['confidence']
+        })
+        
+        # Add to timeline
+        timeline.append({
+            'time': format_time(seg['start']),
+            'speaker': speaker_id,
+            'text': seg['text']
+        })
+    
+    return {
+        'duration': whisper_data.get('duration', 0),
+        'speakers': speakers,
+        'timeline': timeline
+    }
+
+
+def format_time(seconds: float) -> str:
+    """Format seconds as MM:SS."""
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes}:{secs:02d}"
+
+
+# Usage
+if __name__ == "__main__":
+    result = process_recording(
+        "1704067200000_transcript.json",
+        "1704067200000_diarization.json"
+    )
+    
+    print(json.dumps(result, indent=2))
+```
+
+---
+
+### Using GPT to Enhance Mapping
+
+After basic alignment, you can use GPT to:
+
+1. **Resolve ambiguities** when confidence is low
+2. **Split segments** that contain multiple speakers
+3. **Improve speaker labels** using context
+4. **Generate natural conversation format**
+
+**Example GPT Prompt:**
+
+```
+You are analyzing a conversation transcript with speaker diarization data.
+
+Transcript segments:
+- [0.0s - 2.5s] SPEAKER_00: "Hello, how are you?"
+- [2.6s - 5.2s] SPEAKER_01: "I'm doing great, thanks."
+
+Diarization data shows:
+- SPEAKER_00 was active from 0.0s to 2.5s
+- SPEAKER_01 was active from 2.6s to 5.2s
+
+Please:
+1. Verify the alignment is correct
+2. If there are any segments with low confidence, suggest corrections
+3. Format as a natural conversation with speaker labels
+```
+
+---
+
+### Summary
+
+**Key Points:**
+
+1. **Time Synchronization**: Both files share the same timestamp and start time
+2. **Alignment Algorithm**: Match transcript segments to speaker segments using time overlap
+3. **Confidence Scoring**: Calculate confidence based on overlap percentage and diarization confidence
+4. **Edge Cases**: Handle overlapping speakers, missing speakers, and ambiguous segments
+5. **Final Output**: Structured format with speaker-labeled segments and timeline
+
+**Files Needed:**
+- `{timestamp}_transcript.mp3` → Whisper → `{timestamp}_transcript.json`
+- `{timestamp}_diarization.wav` → Diarization → `{timestamp}_diarization.json`
+- Alignment algorithm → `{timestamp}_final.json`
+
+**Result:** You'll know exactly which speaker said what at each second of the recording!
+
+---
+
 *Last Updated: Based on current codebase analysis*
 *Application Version: 1.0.0*
 
