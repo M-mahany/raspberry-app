@@ -13,6 +13,7 @@ interface MetadataMedia {
 }
 
 // Metadata for conversion results - new interface for teh conversion results
+// transcriptFile: MP3 for Whisper, diarizationFile: WAV for diarization
 interface ConversionResult {
   transcriptFile: string | null;
   diarizationFile: string | null;
