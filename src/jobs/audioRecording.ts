@@ -70,8 +70,9 @@ export const startRecording = async () => {
   micInputStream = micInstance.getAudioStream();
 
   recordingSession = true;
+  const recordingStartTime = Date.now();
 
-  const fileName = `${Date.now()}.raw`;
+  const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
 
@@ -83,30 +84,45 @@ export const startRecording = async () => {
 
   micInputStream.on("startComplete", () => {
     logger.info(`🎙️ Recording started: ${fileName}`);
-    // Start DOA monitoring when recording starts
-    DOAService.startDOAMonitoring(2000); // Sample every 2 seconds
+    // Start DOA monitoring with channel detection
+    DOAService.startDOAMonitoringWithChannels(recordingStartTime, 100); // Sample every 100ms
   });
 
   micInputStream.on("error", (err) => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  micInputStream.on("data", function () {
+  micInputStream.on("data", function (data: Buffer) {
     micLastActive = Date.now();
     isMicActive = true;
+    
+    // Process audio chunk for channel-based speech detection
+    DOAService.processAudioChunk(data);
   });
 
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
-    // Stop DOA monitoring and get collected readings
-    const doaReadings = DOAService.stopDOAMonitoring();
-    const latestDOAAngle = DOAService.getLatestDOAAngle();
-
+    
+    // Stop DOA monitoring and get channel segments
+    const doaResult = DOAService.stopDOAMonitoring();
+    
     // Prepare DOA metadata for upload
-    const doaMetadata = {
-      doaAngle: latestDOAAngle,
-      doaData: doaReadings.length > 0 ? doaReadings : undefined,
-    };
+    let doaMetadata;
+    if (typeof doaResult === 'object' && 'segments' in doaResult) {
+      // New format with segments
+      doaMetadata = {
+        doaSegments: doaResult.segments.length > 0 ? doaResult.segments : undefined,
+        doaReadings: doaResult.readings.length > 0 ? doaResult.readings : undefined,
+      };
+    } else {
+      // Backward compatibility with old format
+      const doaReadings = doaResult as DOAReading[];
+      const latestDOAAngle = DOAService.getLatestDOAAngle();
+      doaMetadata = {
+        doaAngle: latestDOAAngle,
+        doaData: doaReadings.length > 0 ? doaReadings : undefined,
+      };
+    }
 
     RecordingService.convertAndUploadToServer(
       rawFile,
@@ -127,7 +143,7 @@ export const startRecording = async () => {
 export const stopRecording = async () => {
   if (micInstance) {
     // Stop DOA monitoring if active
-    if (DOAService.getDOAReadings().length > 0) {
+    if (DOAService.getDOAReadings().length > 0 || DOAService.getDOASegments().length > 0) {
       DOAService.stopDOAMonitoring();
     }
     micInstance.stop();

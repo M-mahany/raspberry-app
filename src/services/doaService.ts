@@ -23,10 +23,37 @@ interface DOAReading {
   timestamp: number;
 }
 
+export interface DOASegment {
+  start: number; // milliseconds
+  end: number; // milliseconds
+  channel: number; // 1-4
+  angle: number; // DOA angle in degrees
+}
+
 export class DOAService {
   private static doaReadings: DOAReading[] = [];
+  private static doaSegments: DOASegment[] = [];
   private static doaMonitoringInterval: NodeJS.Timeout | null = null;
   private static isMonitoring = false;
+
+  // Track active speech segments per channel
+  private static activeSegments: Map<
+    number,
+    {
+      start: number;
+      lastAngle: number;
+      lastUpdate: number;
+    }
+  > = new Map();
+
+  // Recording start time
+  private static recordingStartTime: number = 0;
+
+  // Audio processing parameters
+  private static readonly CHANNELS = 6;
+  private static readonly BYTES_PER_SAMPLE = 2; // 16-bit
+  private static readonly SPEECH_THRESHOLD = 500; // Amplitude threshold for speech detection
+  private static readonly SILENCE_DURATION_MS = 500; // Close segment after 500ms silence
 
   /**
    * Read DOA angle from ReSpeaker USB Mic Array
@@ -43,9 +70,7 @@ export class DOAService {
       // Fallback to Node.js USB approach
       return await this.readDOAViaNodeUSB();
     } catch (error: any) {
-      logger.error(
-        `❌ Error reading DOA angle: ${error?.message || error}`,
-      );
+      logger.error(`❌ Error reading DOA angle: ${error?.message || error}`);
       return null;
     }
   }
@@ -59,7 +84,7 @@ export class DOAService {
       const device = devices.find(
         (d) =>
           d.deviceDescriptor.idVendor === RESPEAKER_VENDOR_ID &&
-          d.deviceDescriptor.idProduct === RESPEAKER_PRODUCT_ID,
+          d.deviceDescriptor.idProduct === RESPEAKER_PRODUCT_ID
       );
 
       if (!device) {
@@ -91,9 +116,7 @@ export class DOAService {
             device.close();
 
             if (error) {
-              logger.debug(
-                `⚠️ USB control transfer error: ${error.message}`,
-              );
+              logger.debug(`⚠️ USB control transfer error: ${error.message}`);
               return resolve(null);
             }
 
@@ -106,12 +129,12 @@ export class DOAService {
             } else {
               resolve(null);
             }
-          },
+          }
         );
       });
     } catch (usbError: any) {
       logger.debug(
-        `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`,
+        `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
       );
       return null;
     }
@@ -156,7 +179,7 @@ except Exception as e:
       }
     } catch (error: any) {
       logger.warn(
-        `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`,
+        `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`
       );
     }
 
@@ -175,7 +198,9 @@ except Exception as e:
 
     this.isMonitoring = true;
     this.doaReadings = [];
-    logger.info(`📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`);
+    logger.info(
+      `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`
+    );
 
     this.doaMonitoringInterval = setInterval(async () => {
       const angle = await this.readDOAAngle();
@@ -184,26 +209,225 @@ except Exception as e:
           angle,
           timestamp: Date.now(),
         });
-        logger.debug(`📡 DOA reading: ${angle}° at ${new Date().toISOString()}`);
+        logger.debug(
+          `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
+        );
       }
     }, samplingIntervalMs);
   }
 
   /**
+   * Start monitoring DOA with channel-based speech detection
+   */
+  static startDOAMonitoringWithChannels(
+    recordingStartTime: number,
+    samplingIntervalMs: number = 100
+  ): void {
+    if (this.isMonitoring) {
+      logger.warn("⚠️ DOA monitoring is already active");
+      return;
+    }
+
+    this.isMonitoring = true;
+    this.doaReadings = [];
+    this.doaSegments = [];
+    this.activeSegments.clear();
+    this.recordingStartTime = recordingStartTime;
+
+    logger.info(
+      `📡 Starting DOA monitoring with channel detection (sampling every ${samplingIntervalMs}ms)`
+    );
+
+    // Update DOA angle periodically
+    this.doaMonitoringInterval = setInterval(async () => {
+      const angle = await this.readDOAAngle();
+      if (angle !== null) {
+        const timestamp = Date.now();
+        this.doaReadings.push({
+          angle,
+          timestamp,
+        });
+
+        // Update active segments with latest angle
+        this.updateActiveSegments(angle, timestamp);
+
+        logger.debug(
+          `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
+        );
+      }
+    }, samplingIntervalMs);
+  }
+
+  /**
+   * Process audio chunk to detect speech on channels 1-4
+   */
+  static processAudioChunk(audioBuffer: Buffer): void {
+    if (!this.isMonitoring) return;
+
+    const currentTime = Date.now();
+    const relativeTime = currentTime - this.recordingStartTime;
+
+    // Parse 6-channel audio buffer
+    // Format: interleaved samples [ch0_sample1, ch1_sample1, ch2_sample1, ch3_sample1, ch4_sample1, ch5_sample1, ch0_sample2, ...]
+    const samplesPerChannel =
+      audioBuffer.length / (this.CHANNELS * this.BYTES_PER_SAMPLE);
+
+    // Extract channels 1-4 (indices 1-4 in 0-indexed)
+    const channelData: number[][] = [[], [], [], []]; // For channels 1-4
+
+    for (let i = 0; i < samplesPerChannel; i++) {
+      for (let ch = 1; ch <= 4; ch++) {
+        const offset = (i * this.CHANNELS + ch) * this.BYTES_PER_SAMPLE;
+        if (offset + 1 < audioBuffer.length) {
+          const sample = audioBuffer.readInt16LE(offset);
+          channelData[ch - 1].push(Math.abs(sample));
+        }
+      }
+    }
+
+    // Detect speech on each channel
+    for (let ch = 1; ch <= 4; ch++) {
+      const channelIndex = ch - 1;
+      const samples = channelData[channelIndex];
+
+      if (samples.length === 0) continue;
+
+      // Calculate RMS (Root Mean Square) energy for speech detection
+      const sumSquares = samples.reduce(
+        (sum, sample) => sum + sample * sample,
+        0
+      );
+      const rms = Math.sqrt(sumSquares / samples.length);
+
+      const hasSpeech = rms > this.SPEECH_THRESHOLD;
+      const channelKey = ch;
+
+      if (hasSpeech) {
+        // Speech detected - start or continue segment
+        if (!this.activeSegments.has(channelKey)) {
+          // Start new segment
+          const currentAngle = this.getCurrentDOAAngle();
+          this.activeSegments.set(channelKey, {
+            start: relativeTime,
+            lastAngle: currentAngle,
+            lastUpdate: currentTime,
+          });
+          logger.debug(
+            `🎤 Speech detected on channel ${ch} at ${relativeTime}ms, DOA: ${currentAngle}°`
+          );
+        } else {
+          // Update existing segment
+          const segment = this.activeSegments.get(channelKey)!;
+          const currentAngle = this.getCurrentDOAAngle();
+          segment.lastAngle = currentAngle;
+          segment.lastUpdate = currentTime;
+        }
+      } else {
+        // No speech - check if we should close segment
+        if (this.activeSegments.has(channelKey)) {
+          const segment = this.activeSegments.get(channelKey)!;
+          const silenceDuration = currentTime - segment.lastUpdate;
+
+          if (silenceDuration >= this.SILENCE_DURATION_MS) {
+            // Close segment
+            this.closeSegment(channelKey, relativeTime);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Close a speech segment and add to segments array
+   */
+  private static closeSegment(channel: number, endTime: number): void {
+    const segment = this.activeSegments.get(channel);
+    if (!segment) return;
+
+    this.doaSegments.push({
+      start: segment.start,
+      end: endTime,
+      channel: channel,
+      angle: segment.lastAngle,
+    });
+
+    this.activeSegments.delete(channel);
+    logger.debug(`🔇 Speech ended on channel ${channel} at ${endTime}ms`);
+  }
+
+  /**
+   * Update active segments with latest DOA angle
+   */
+  private static updateActiveSegments(angle: number, timestamp: number): void {
+    for (const [, segment] of this.activeSegments.entries()) {
+      // Update angle if segment is still active
+      segment.lastAngle = angle;
+      segment.lastUpdate = timestamp;
+    }
+  }
+
+  /**
+   * Get current DOA angle (from most recent reading)
+   */
+  private static getCurrentDOAAngle(): number {
+    if (this.doaReadings.length === 0) {
+      return 0; // Default angle if no readings yet
+    }
+    return this.doaReadings[this.doaReadings.length - 1].angle;
+  }
+
+  /**
    * Stop DOA monitoring and return collected readings
    */
-  static stopDOAMonitoring(): DOAReading[] {
+  static stopDOAMonitoring():
+    | DOAReading[]
+    | { segments: DOASegment[]; readings: DOAReading[] } {
     if (this.doaMonitoringInterval) {
       clearInterval(this.doaMonitoringInterval);
       this.doaMonitoringInterval = null;
     }
 
     this.isMonitoring = false;
+
+    // If we have active segments, return segments and readings
+    if (this.activeSegments.size > 0 || this.doaSegments.length > 0) {
+      // Close all active segments
+      const currentTime = Date.now();
+      const relativeTime = currentTime - this.recordingStartTime;
+
+      for (const channel of this.activeSegments.keys()) {
+        this.closeSegment(channel, relativeTime);
+      }
+
+      const segments = [...this.doaSegments];
+      const readings = [...this.doaReadings];
+
+      this.doaSegments = [];
+      this.doaReadings = [];
+      this.activeSegments.clear();
+
+      logger.info(
+        `📡 DOA monitoring stopped. Collected ${segments.length} segments, ${readings.length} readings`
+      );
+
+      return { segments, readings };
+    }
+
+    // Otherwise return just readings (backward compatibility)
     const readings = [...this.doaReadings];
     this.doaReadings = [];
 
-    logger.info(`📡 DOA monitoring stopped. Collected ${readings.length} readings`);
+    logger.info(
+      `📡 DOA monitoring stopped. Collected ${readings.length} readings`
+    );
     return readings;
+  }
+
+  /**
+   * Get current DOA segments without stopping monitoring
+   */
+  static getDOASegments(): DOASegment[] {
+    return [...this.doaSegments];
   }
 
   /**
@@ -230,4 +454,3 @@ except Exception as e:
     this.doaReadings = [];
   }
 }
-

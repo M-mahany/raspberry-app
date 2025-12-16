@@ -10,6 +10,13 @@ import { execSync } from "child_process";
 interface DOAMetadata {
   doaAngle?: number | null;
   doaData?: Array<{ angle: number; timestamp: number }>;
+  doaSegments?: Array<{
+    start: number;      // milliseconds
+    end: number;       // milliseconds
+    channel: number;   // 1-4
+    angle: number;     // DOA angle
+  }>;
+  doaReadings?: Array<{ angle: number; timestamp: number }>;
 }
 
 export class RecordingService {
@@ -24,7 +31,27 @@ export class RecordingService {
       formData.append("timeZone", getTimeZone());
       formData.append("fileType", fileType);
 
-      // Add DOA metadata for diarization files
+      // Add DOA segments for transcript files (since we're not using WAV anymore)
+      if (fileType === "transcript" && doaMetadata) {
+        if (doaMetadata.doaSegments && doaMetadata.doaSegments.length > 0) {
+          formData.append("doaSegments", JSON.stringify(doaMetadata.doaSegments));
+        }
+        if (doaMetadata.doaReadings && doaMetadata.doaReadings.length > 0) {
+          formData.append("doaReadings", JSON.stringify(doaMetadata.doaReadings));
+        }
+        // Backward compatibility: also include old format if present
+        if (
+          doaMetadata.doaAngle !== undefined &&
+          doaMetadata.doaAngle !== null
+        ) {
+          formData.append("doaAngle", doaMetadata.doaAngle.toString());
+        }
+        if (doaMetadata.doaData && doaMetadata.doaData.length > 0) {
+          formData.append("doaData", JSON.stringify(doaMetadata.doaData));
+        }
+      }
+      
+      // Add DOA metadata for diarization files (backward compatibility)
       if (fileType === "diarization" && doaMetadata) {
         if (
           doaMetadata.doaAngle !== undefined &&
@@ -103,24 +130,26 @@ export class RecordingService {
         await ffmpegService.convertMultiChannelAudio(rawFile);
 
       if (conversionResult.transcriptFile && conversionResult.diarizationFile) {
-        // Multi-channel recording: upload both files
+        // Multi-channel recording: upload transcript file with DOA segments
         logger.info(
           `⬆️ Uploading transcript file: ${getFileName(conversionResult.transcriptFile)} to server...`
         );
         await this.uploadRecording(
           conversionResult.transcriptFile,
-          undefined,
+          doaMetadata, // Pass DOA segments here
           "transcript"
         );
 
-        logger.info(
-          `⬆️ Uploading diarization file: ${getFileName(conversionResult.diarizationFile)} to server...`
-        );
-        await this.uploadRecording(
-          conversionResult.diarizationFile,
-          doaMetadata,
-          "diarization"
-        );
+        // Note: We're no longer uploading diarization WAV file
+        // Delete it if it was created
+        if (conversionResult.diarizationFile) {
+          try {
+            fs.unlinkSync(conversionResult.diarizationFile);
+            logger.info(`🗑️ Deleted diarization file: ${getFileName(conversionResult.diarizationFile)}`);
+          } catch (err) {
+            logger.warn(`⚠️ Could not delete diarization file: ${err}`);
+          }
+        }
       } else {
         // Fallback to single-channel conversion (backward compatibility)
         logger.warn(
