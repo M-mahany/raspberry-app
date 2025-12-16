@@ -254,6 +254,10 @@ except Exception as e:
         logger.debug(
           `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
         );
+        console.log(`📡 DOA reading: ${angle}°`);
+      } else {
+        logger.warn(`⚠️ DOA reading failed - returned null`);
+        console.log(`⚠️ DOA reading failed - returned null`);
       }
     }, samplingIntervalMs);
   }
@@ -315,6 +319,9 @@ except Exception as e:
           logger.debug(
             `🎤 Speech detected on channel ${ch} at ${relativeTime}ms, DOA: ${currentAngle}°`
           );
+          console.log(
+            `🎤 Speech detected on channel ${ch} at ${relativeTime}ms, DOA: ${currentAngle}°, Total readings: ${this.doaReadings.length}`
+          );
         } else {
           // Update existing segment
           const segment = this.activeSegments.get(channelKey)!;
@@ -344,15 +351,43 @@ except Exception as e:
     const segment = this.activeSegments.get(channel);
     if (!segment) return;
 
+    // Use the most recent angle, or calculate average angle during segment
+    let finalAngle = segment.lastAngle;
+
+    // If we have readings during this segment, use the most recent one
+    if (this.doaReadings.length > 0) {
+      const segmentStartTime = this.recordingStartTime + segment.start;
+      const segmentEndTime = this.recordingStartTime + endTime;
+
+      // Find readings during this segment
+      const readingsDuringSegment = this.doaReadings.filter(
+        (r) => r.timestamp >= segmentStartTime && r.timestamp <= segmentEndTime
+      );
+
+      if (readingsDuringSegment.length > 0) {
+        // Use the most recent reading during the segment
+        finalAngle =
+          readingsDuringSegment[readingsDuringSegment.length - 1].angle;
+      } else {
+        // Use the most recent reading overall if no readings during segment
+        finalAngle = this.doaReadings[this.doaReadings.length - 1].angle;
+      }
+    }
+
     this.doaSegments.push({
       start: segment.start,
       end: endTime,
       channel: channel,
-      angle: segment.lastAngle,
+      angle: finalAngle,
     });
 
     this.activeSegments.delete(channel);
-    logger.debug(`🔇 Speech ended on channel ${channel} at ${endTime}ms`);
+    logger.debug(
+      `🔇 Speech ended on channel ${channel} at ${endTime}ms, Final DOA: ${finalAngle}°`
+    );
+    console.log(
+      `🔇 Speech ended on channel ${channel} at ${endTime}ms, Final DOA: ${finalAngle}°`
+    );
   }
 
   /**
