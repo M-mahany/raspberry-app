@@ -18,7 +18,7 @@ const CONTROL_REQUEST = 0x00; // Custom request code
 const CONTROL_VALUE = 0x0200; // Parameter ID for DOAANGLE
 const CONTROL_INDEX = 0x0000;
 
-interface DOAReading {
+export interface DOAReading {
   angle: number;
   timestamp: number;
 }
@@ -409,6 +409,10 @@ except Exception as e:
       logger.info(
         `📡 DOA monitoring stopped. Collected ${segments.length} segments, ${readings.length} readings`
       );
+
+      console.log("\n📊 ========== DOA SEGMENTS OUTPUT ==========");
+      console.log(JSON.stringify(segments, null, 2));
+      console.log("📊 =========================================\n");
 
       return { segments, readings };
     }

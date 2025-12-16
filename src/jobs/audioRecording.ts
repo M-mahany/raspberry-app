@@ -9,7 +9,7 @@ import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
 import { WriteStream } from "fs";
 import { flushQueueLoop } from "../services/notificationService";
-import { DOAService } from "../services/doaService";
+import { DOAService, DOAReading, DOASegment } from "../services/doaService";
 
 dotenv.config();
 
@@ -54,7 +54,7 @@ const micOptions: MicOptions = {
 export const startRecording = async () => {
   if (recordingSession) {
     logger.warn(
-      "Active recording is already in progress. Skipping starting new recording...",
+      "Active recording is already in progress. Skipping starting new recording..."
     );
     return;
   }
@@ -95,25 +95,53 @@ export const startRecording = async () => {
   micInputStream.on("data", function (data: Buffer) {
     micLastActive = Date.now();
     isMicActive = true;
-    
+
     // Process audio chunk for channel-based speech detection
     DOAService.processAudioChunk(data);
   });
 
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
-    
+
     // Stop DOA monitoring and get channel segments
     const doaResult = DOAService.stopDOAMonitoring();
-    
+
     // Prepare DOA metadata for upload
     let doaMetadata;
-    if (typeof doaResult === 'object' && 'segments' in doaResult) {
+    if (
+      typeof doaResult === "object" &&
+      !Array.isArray(doaResult) &&
+      "segments" in doaResult
+    ) {
       // New format with segments
-      doaMetadata = {
-        doaSegments: doaResult.segments.length > 0 ? doaResult.segments : undefined,
-        doaReadings: doaResult.readings.length > 0 ? doaResult.readings : undefined,
+      const segmentsResult = doaResult as {
+        segments: DOASegment[];
+        readings: DOAReading[];
       };
+      doaMetadata = {
+        doaSegments:
+          segmentsResult.segments.length > 0
+            ? segmentsResult.segments
+            : undefined,
+        doaReadings:
+          segmentsResult.readings.length > 0
+            ? segmentsResult.readings
+            : undefined,
+      };
+
+      // Print DOA segments
+      console.log("\n📊 ========== DOA SEGMENTS (Before Upload) ==========");
+      console.log(
+        "DOA Segments:",
+        JSON.stringify(doaMetadata.doaSegments, null, 2)
+      );
+      if (doaMetadata.doaReadings) {
+        console.log(
+          "DOA Readings:",
+          JSON.stringify(doaMetadata.doaReadings, null, 2)
+        );
+      }
+      console.log("📊 =================================================\n");
     } else {
       // Backward compatibility with old format
       const doaReadings = doaResult as DOAReading[];
@@ -127,7 +155,7 @@ export const startRecording = async () => {
     RecordingService.convertAndUploadToServer(
       rawFile,
       recordingFiles,
-      doaMetadata,
+      doaMetadata
     );
   });
 
@@ -143,8 +171,26 @@ export const startRecording = async () => {
 export const stopRecording = async () => {
   if (micInstance) {
     // Stop DOA monitoring if active
-    if (DOAService.getDOAReadings().length > 0 || DOAService.getDOASegments().length > 0) {
-      DOAService.stopDOAMonitoring();
+    if (
+      DOAService.getDOAReadings().length > 0 ||
+      DOAService.getDOASegments().length > 0
+    ) {
+      const doaResult = DOAService.stopDOAMonitoring();
+
+      // Print DOA segments when manually stopping
+      if (
+        typeof doaResult === "object" &&
+        !Array.isArray(doaResult) &&
+        "segments" in doaResult
+      ) {
+        const segmentsResult = doaResult as {
+          segments: DOASegment[];
+          readings: DOAReading[];
+        };
+        console.log("\n📊 ========== DOA SEGMENTS (On Manual Stop) ==========");
+        console.log(JSON.stringify(segmentsResult.segments, null, 2));
+        console.log("📊 ===================================================\n");
+      }
     }
     micInstance.stop();
     outputFileStream?.close();
@@ -172,7 +218,7 @@ const handleInterruptedFiles = async () => {
 
     // list of eligible .raw interrupted files
     const filteredRawFiles = files.filter(
-      (file) => path.extname(file) === ".raw" && !recordingFiles.has(file),
+      (file) => path.extname(file) === ".raw" && !recordingFiles.has(file)
     );
     // list of eligible .mp3 interrupted files (transcript files)
     const filteredMp3Files = files.filter((file) => {
@@ -198,7 +244,7 @@ const handleInterruptedFiles = async () => {
     const conversionPromises = filteredRawFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
       logger.info(
-        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
+        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`
       );
       // No DOA data available for interrupted files
       await RecordingService.convertAndUploadToServer(rawFilePath);
@@ -211,18 +257,18 @@ const handleInterruptedFiles = async () => {
     if (filteredMp3Files?.length) {
       for (const file of filteredMp3Files) {
         logger.info(
-          `⬆️ Uploading interrupted transcript file: ${getFileName(file)} to server...`,
+          `⬆️ Uploading interrupted transcript file: ${getFileName(file)} to server...`
         );
         const mp3FilePath = path.join(RECORDING_DIR, file);
         try {
           await RecordingService.uploadRecording(
             mp3FilePath,
             undefined,
-            "transcript",
+            "transcript"
           );
         } catch (error: any) {
           logger.error(
-            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`,
+            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`
           );
         }
       }
@@ -231,7 +277,7 @@ const handleInterruptedFiles = async () => {
     if (filteredWavFiles?.length) {
       for (const file of filteredWavFiles) {
         logger.info(
-          `⬆️ Uploading interrupted diarization file: ${getFileName(file)} to server...`,
+          `⬆️ Uploading interrupted diarization file: ${getFileName(file)} to server...`
         );
         const wavFilePath = path.join(RECORDING_DIR, file);
         try {
@@ -239,11 +285,11 @@ const handleInterruptedFiles = async () => {
           await RecordingService.uploadRecording(
             wavFilePath,
             undefined,
-            "diarization",
+            "diarization"
           );
         } catch (error: any) {
           logger.error(
-            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`,
+            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`
           );
         }
       }
