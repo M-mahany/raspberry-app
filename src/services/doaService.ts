@@ -63,15 +63,25 @@ export class DOAService {
   static async readDOAAngle(): Promise<number | null> {
     try {
       // Try Python script first (more reliable, based on respeaker tools)
+      console.log("🔍 Attempting Python DOA read...");
       const pythonResult = await this.readDOAViaPython();
       if (pythonResult !== null) {
+        console.log(`✅ Python DOA read successful: ${pythonResult}°`);
         return pythonResult;
       }
+      console.log("⚠️ Python DOA read failed, trying Node USB...");
 
       // Fallback to Node.js USB approach
-      return await this.readDOAViaNodeUSB();
+      const nodeResult = await this.readDOAViaNodeUSB();
+      if (nodeResult !== null) {
+        console.log(`✅ Node USB DOA read successful: ${nodeResult}°`);
+        return nodeResult;
+      }
+      console.log("⚠️ Node USB DOA read also failed");
+      return null;
     } catch (error: any) {
       logger.error(`❌ Error reading DOA angle: ${error?.message || error}`);
+      console.log(`❌ Error reading DOA angle: ${error?.message || error}`);
       return null;
     }
   }
@@ -91,6 +101,15 @@ export class DOAService {
       if (!device) {
         logger.debug("📡 ReSpeaker USB Mic Array not found via USB");
         console.log("📡 ReSpeaker USB Mic Array not found via USB");
+        console.log(
+          `🔍 Looking for Vendor: 0x${RESPEAKER_VENDOR_ID.toString(16)}, Product: 0x${RESPEAKER_PRODUCT_ID.toString(16)}`
+        );
+        console.log(`🔍 Found ${devices.length} USB device(s), listing all:`);
+        devices.forEach((d, i) => {
+          console.log(
+            `  ${i + 1}. Vendor: 0x${d.deviceDescriptor.idVendor.toString(16)}, Product: 0x${d.deviceDescriptor.idProduct.toString(16)}`
+          );
+        });
         return null;
       }
 
@@ -123,6 +142,8 @@ export class DOAService {
 
             if (error) {
               logger.debug(`⚠️ USB control transfer error: ${error.message}`);
+              console.log(`⚠️ USB control transfer error: ${error.message}`);
+              console.log(`⚠️ Error details:`, error);
               return resolve(null);
             }
 
@@ -150,6 +171,8 @@ export class DOAService {
       logger.debug(
         `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
       );
+      console.log(`⚠️ Node.js USB exception: ${usbError?.message || usbError}`);
+      console.log(`⚠️ USB error stack:`, usbError?.stack);
       return null;
     }
   }
@@ -184,17 +207,47 @@ except Exception as e:
     exit(1)
 `;
 
-      const { stdout } = await execPromise(`python3 -c "${pythonScript}"`);
+      const { stdout, stderr } = await execPromise(
+        `python3 -c "${pythonScript}"`
+      );
       const angle = parseInt(stdout.trim(), 10);
 
       if (!isNaN(angle)) {
         logger.debug(`📡 DOA Angle read via Python: ${angle}°`);
+        console.log(`📡 DOA Angle read via Python: ${angle}°`);
         return angle;
+      } else {
+        logger.warn(
+          `⚠️ Python DOA reading returned invalid number: ${stdout.trim()}`
+        );
+        console.log(
+          `⚠️ Python DOA reading returned invalid number: "${stdout.trim()}"`
+        );
+        if (stderr) {
+          console.log(`⚠️ Python stderr: ${stderr}`);
+        }
       }
     } catch (error: any) {
       logger.warn(
         `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`
       );
+      console.log(`⚠️ Python DOA reading failed: ${error?.message || error}`);
+      console.log(`⚠️ Python error code: ${error?.code}`);
+      if (error.stderr) {
+        console.log(`⚠️ Python stderr: ${error.stderr.toString()}`);
+      }
+      if (error.stdout) {
+        console.log(`⚠️ Python stdout: ${error.stdout.toString()}`);
+      }
+
+      // Check if python3 is available
+      try {
+        await execPromise("python3 --version");
+        console.log("✅ python3 is available");
+      } catch (pyCheckError: any) {
+        console.log("❌ python3 is NOT available or not in PATH");
+        console.log(`   Error: ${pyCheckError?.message || pyCheckError}`);
+      }
     }
 
     return null;
