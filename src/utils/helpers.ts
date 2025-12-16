@@ -13,7 +13,7 @@ export const getFileName = (filePath: string) => {
 export const convertLogsToJson = (
   logs: string,
   page: number,
-  limit: number,
+  limit: number
 ) => {
   const logEntries = logs
     .split("\n")
@@ -21,7 +21,7 @@ export const convertLogsToJson = (
     .reverse()
     .map((line) => {
       const match = line.match(
-        /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z) \[(\w+)\]: (.*)/,
+        /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z) \[(\w+)\]: (.*)/
       );
       if (match) {
         return { timestamp: match[1], level: match[2], message: match[3] };
@@ -48,3 +48,40 @@ export const getTimeZone = () => {
 
 export const waitForMs = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+export function formatTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const remainingSecondsAfterHours = seconds % 3600;
+  const minutes = Math.floor(remainingSecondsAfterHours / 60);
+  const remainingSeconds = remainingSecondsAfterHours % 60;
+
+  // Format the time as HH:MM:SS
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${Math.floor(remainingSeconds)
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+export function formatDOASegments(
+  segments: Array<{
+    start: number;
+    end: number;
+    channel: number;
+    angle: number;
+  }>
+): string {
+  if (!segments || segments.length === 0) {
+    return "No segments";
+  }
+
+  return segments
+    .map((seg, index) => {
+      const startSeconds = seg.start / 1000;
+      const endSeconds = seg.end / 1000;
+      const duration = (seg.end - seg.start) / 1000;
+
+      return `${index + 1}. Channel ${seg.channel} | ${formatTime(startSeconds)} - ${formatTime(endSeconds)} (${duration.toFixed(1)}s) | DOA: ${seg.angle}°`;
+    })
+    .join("\n");
+}

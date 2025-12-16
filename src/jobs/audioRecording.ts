@@ -10,6 +10,7 @@ import dayjs from "dayjs";
 import { WriteStream } from "fs";
 import { flushQueueLoop } from "../services/notificationService";
 import { DOAService, DOAReading, DOASegment } from "../services/doaService";
+import { formatDOASegments } from "../utils/helpers";
 
 dotenv.config();
 
@@ -82,10 +83,10 @@ export const startRecording = async () => {
 
   micInputStream.pipe(outputFileStream);
 
-  micInputStream.on("startComplete", () => {
+  micInputStream.on("startComplete", async () => {
     logger.info(`🎙️ Recording started: ${fileName}`);
     // Start DOA monitoring with channel detection
-    DOAService.startDOAMonitoringWithChannels(recordingStartTime, 100); // Sample every 100ms
+    await DOAService.startDOAMonitoringWithChannels(recordingStartTime, 100); // Sample every 100ms
   });
 
   micInputStream.on("error", (err) => {
@@ -131,14 +132,16 @@ export const startRecording = async () => {
 
       // Print DOA segments
       console.log("\n📊 ========== DOA SEGMENTS (Before Upload) ==========");
-      console.log(
-        "DOA Segments:",
-        JSON.stringify(doaMetadata.doaSegments, null, 2)
-      );
+      if (doaMetadata.doaSegments) {
+        console.log(formatDOASegments(doaMetadata.doaSegments));
+        console.log("\n📊 Raw JSON:");
+        console.log(JSON.stringify(doaMetadata.doaSegments, null, 2));
+      }
       if (doaMetadata.doaReadings) {
         console.log(
-          "DOA Readings:",
-          JSON.stringify(doaMetadata.doaReadings, null, 2)
+          "\n📊 DOA Readings:",
+          doaMetadata.doaReadings.length,
+          "readings"
         );
       }
       console.log("📊 =================================================\n");
@@ -188,6 +191,8 @@ export const stopRecording = async () => {
           readings: DOAReading[];
         };
         console.log("\n📊 ========== DOA SEGMENTS (On Manual Stop) ==========");
+        console.log(formatDOASegments(segmentsResult.segments));
+        console.log("\n📊 Raw JSON:");
         console.log(JSON.stringify(segmentsResult.segments, null, 2));
         console.log("📊 ===================================================\n");
       }

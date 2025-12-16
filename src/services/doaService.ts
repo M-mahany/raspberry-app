@@ -3,6 +3,7 @@ import logger from "../utils/winston/logger";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { Buffer } from "buffer";
+import { formatDOASegments } from "../utils/helpers";
 
 const execPromise = promisify(exec);
 
@@ -89,8 +90,13 @@ export class DOAService {
 
       if (!device) {
         logger.debug("📡 ReSpeaker USB Mic Array not found via USB");
+        console.log("📡 ReSpeaker USB Mic Array not found via USB");
         return null;
       }
+
+      console.log(
+        `📡 Found ReSpeaker device: Vendor ${device.deviceDescriptor.idVendor.toString(16)}, Product ${device.deviceDescriptor.idProduct.toString(16)}`
+      );
 
       device.open();
       const interfaceNumber = 0; // Usually interface 0
@@ -125,8 +131,16 @@ export class DOAService {
               // Parse 32-bit signed integer (little-endian)
               const angle = buffer.readInt32LE(0);
               logger.debug(`📡 DOA Angle read via Node USB: ${angle}°`);
+              console.log(`📡 DOA Angle read via Node USB: ${angle}°`);
               resolve(angle);
             } else {
+              const bufferInfo = Buffer.isBuffer(buffer)
+                ? `length ${buffer.length}`
+                : typeof buffer === "number"
+                  ? `number ${buffer}`
+                  : "null";
+              logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+              console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
               resolve(null);
             }
           }
@@ -219,10 +233,10 @@ except Exception as e:
   /**
    * Start monitoring DOA with channel-based speech detection
    */
-  static startDOAMonitoringWithChannels(
+  static async startDOAMonitoringWithChannels(
     recordingStartTime: number,
     samplingIntervalMs: number = 100
-  ): void {
+  ): Promise<void> {
     if (this.isMonitoring) {
       logger.warn("⚠️ DOA monitoring is already active");
       return;
@@ -237,6 +251,25 @@ except Exception as e:
     logger.info(
       `📡 Starting DOA monitoring with channel detection (sampling every ${samplingIntervalMs}ms)`
     );
+
+    // Try to read DOA immediately to test if device is available
+    const initialAngle = await this.readDOAAngle();
+    if (initialAngle !== null) {
+      const initialTimestamp = Date.now();
+      this.doaReadings.push({
+        angle: initialAngle,
+        timestamp: initialTimestamp,
+      });
+      console.log(`📡 Initial DOA reading: ${initialAngle}°`);
+      logger.info(`📡 Initial DOA reading: ${initialAngle}°`);
+    } else {
+      console.log(
+        `⚠️ Initial DOA reading failed - device may not be available`
+      );
+      logger.warn(
+        `⚠️ Initial DOA reading failed - device may not be available`
+      );
+    }
 
     // Update DOA angle periodically
     this.doaMonitoringInterval = setInterval(async () => {
@@ -446,6 +479,8 @@ except Exception as e:
       );
 
       console.log("\n📊 ========== DOA SEGMENTS OUTPUT ==========");
+      console.log(formatDOASegments(segments));
+      console.log("\n📊 Raw JSON:");
       console.log(JSON.stringify(segments, null, 2));
       console.log("📊 =========================================\n");
 
