@@ -9,7 +9,11 @@ import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
 import { WriteStream } from "fs";
 import { flushQueueLoop } from "../services/notificationService";
-import { DOAService, DOAReading, DOASegment } from "../services/doaService";
+import {
+  DOAService,
+  DOAReading,
+  type DOASegment,
+} from "../services/doaService";
 import { formatDOASegments } from "../utils/helpers";
 
 dotenv.config();
