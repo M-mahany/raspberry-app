@@ -2,7 +2,10 @@ import fs from "fs-extra";
 import mic, { MicInputStream, MicInstance, MicOptions } from "mic";
 import dotenv from "dotenv";
 import path from "path";
-import { RecordingService } from "../services/recordingsService";
+import {
+  RecordingService,
+  type DOAMetadata,
+} from "../services/recordingsService";
 import logger from "../utils/winston/logger";
 import { getFileName } from "../utils/helpers";
 import { SystemService } from "../services/systemService";
@@ -32,6 +35,7 @@ const recordingFiles = new Set<string>(); // Stores active recordings
 let micInstance: MicInstance;
 let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
+let currentRawFile: string | null = null; // Add this to track current recording file
 
 let recordingSession = false;
 let restartTimer: NodeJS.Timeout | null = null;
@@ -80,6 +84,7 @@ export const startRecording = async () => {
   const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
+  currentRawFile = rawFile; // Store current file path
 
   outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -109,7 +114,7 @@ export const startRecording = async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
 
     // Extract recording ID from filename
-    const recordingId = getFileName(rawFile).split(".")[0]; // e.g., "1765994256945"
+    const recordingId = getFileName(rawFile).split(".")[0];
 
     // Stop DOA monitoring and get channel segments
     const doaResult = DOAService.stopDOAMonitoring();
@@ -182,6 +187,8 @@ export const startRecording = async () => {
       doaMetadata,
       doaJsonFilePath
     );
+
+    currentRawFile = null; // Clear current file reference after processing
   });
 
   micInputStream.on("stopComplete", async () => {
@@ -195,15 +202,42 @@ export const startRecording = async () => {
 // Stops the current recording gracefully
 export const stopRecording = async () => {
   if (micInstance) {
-    // Stop DOA monitoring if active
+    // Stop DOA monitoring if active and save segments to file
     if (
       DOAService.getDOAReadings().length > 0 ||
       DOAService.getDOASegments().length > 0
     ) {
       const doaResult = DOAService.stopDOAMonitoring();
 
-      // Print DOA segments when manually stopping
-      //LOAI - FOR ME: remove when done debugging
+      // Save DOA segments to JSON file if we have a current recording file
+      if (currentRawFile) {
+        const recordingId = getFileName(currentRawFile).split(".")[0];
+
+        if (
+          typeof doaResult === "object" &&
+          !Array.isArray(doaResult) &&
+          "segments" in doaResult
+        ) {
+          const segmentsResult = doaResult as {
+            segments: DOASegment[];
+            readings: DOAReading[];
+          };
+
+          // Save DOA segments to JSON file for later processing
+          if (segmentsResult.segments.length > 0) {
+            const doaJsonFilePath = DOAService.generateDOAJsonFile(
+              segmentsResult.segments,
+              recordingId,
+              RECORDING_DIR
+            );
+            logger.info(
+              `📄 Saved DOA segments to JSON file: ${getFileName(doaJsonFilePath)}`
+            );
+          }
+        }
+      }
+
+      // Print DOA segments when manually stopping - LOAI - FOR ME: remove when done debugging
       if (
         typeof doaResult === "object" &&
         !Array.isArray(doaResult) &&
@@ -224,6 +258,7 @@ export const stopRecording = async () => {
     outputFileStream?.close();
     micInputStream?.removeAllListeners(); // Prevent memory leaks
     await RecordingService.killExistingRecordings();
+    currentRawFile = null; // Clear current file reference
   }
 };
 
@@ -272,11 +307,42 @@ const handleInterruptedFiles = async () => {
 
     const conversionPromises = filteredRawFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+
       logger.info(
         `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`
       );
-      // No DOA data available for interrupted files
-      await RecordingService.convertAndUploadToServer(rawFilePath);
+
+      // Check if DOA JSON file exists for this interrupted recording
+      let doaMetadata: DOAMetadata | undefined;
+      let doaJsonFilePath: string | undefined;
+
+      if (fs.existsSync(jsonFilePath)) {
+        try {
+          const jsonData = JSON.parse(fs.readFileSync(jsonFilePath, "utf-8"));
+          logger.info(
+            `📄 Found DOA JSON file for interrupted recording: ${getFileName(jsonFilePath)}`
+          );
+
+          doaMetadata = {
+            doaSegments: jsonData.segments || undefined,
+            doaReadings: jsonData.readings || undefined,
+          };
+          doaJsonFilePath = jsonFilePath;
+        } catch (error: any) {
+          logger.warn(
+            `⚠️ Failed to read DOA JSON file ${getFileName(jsonFilePath)}: ${error?.message || error}`
+          );
+        }
+      }
+
+      await RecordingService.convertAndUploadToServer(
+        rawFilePath,
+        undefined,
+        doaMetadata,
+        doaJsonFilePath
+      );
     });
 
     if (filteredRawFiles?.length) {

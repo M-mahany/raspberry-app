@@ -7,7 +7,7 @@ import logger from "../utils/winston/logger";
 import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
-interface DOAMetadata {
+export interface DOAMetadata {
   doaAngle?: number | null;
   doaData?: Array<{ angle: number; timestamp: number }>;
   doaSegments?: Array<{
