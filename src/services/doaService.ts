@@ -130,42 +130,58 @@ export class DOAService {
       // Read DOAANGLE parameter using callback-based controlTransfer
       // Control transfer: bmRequestType, bRequest, wValue, wIndex, data_or_length, callback
       return new Promise<number | null>((resolve) => {
-        device.controlTransfer(
-          CONTROL_REQUEST_TYPE,
-          CONTROL_REQUEST,
-          CONTROL_VALUE,
-          CONTROL_INDEX,
-          4, // 4 bytes for int32
-          (error, buffer) => {
+        try {
+          device.controlTransfer(
+            CONTROL_REQUEST_TYPE,
+            CONTROL_REQUEST,
+            CONTROL_VALUE,
+            CONTROL_INDEX,
+            4, // 4 bytes for int32
+            (error, buffer) => {
+              try {
+                iface.release(true);
+                device.close();
+              } catch (cleanupError: any) {
+                logger.debug(`⚠️ USB cleanup error: ${cleanupError?.message}`);
+              }
+
+              if (error) {
+                logger.debug(`⚠️ USB control transfer error: ${error.message}`);
+                console.log(`⚠️ USB control transfer error: ${error.message}`);
+                console.log(`⚠️ Error details:`, error);
+                return resolve(null);
+              }
+
+              // Handle buffer - can be number or Buffer
+              if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
+                // Parse 32-bit signed integer (little-endian)
+                const angle = buffer.readInt32LE(0);
+                logger.debug(`�� DOA Angle read via Node USB: ${angle}°`);
+                console.log(`�� DOA Angle read via Node USB: ${angle}°`);
+                resolve(angle);
+              } else {
+                const bufferInfo = Buffer.isBuffer(buffer)
+                  ? `length ${buffer.length}`
+                  : typeof buffer === "number"
+                    ? `number ${buffer}`
+                    : "null";
+                logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                resolve(null);
+              }
+            }
+          );
+        } catch (transferError: any) {
+          logger.error(`⚠️ Failed to initiate USB control transfer: ${transferError?.message}`);
+          console.log(`⚠️ Failed to initiate USB control transfer: ${transferError?.message}`);
+          try {
             iface.release(true);
             device.close();
-
-            if (error) {
-              logger.debug(`⚠️ USB control transfer error: ${error.message}`);
-              console.log(`⚠️ USB control transfer error: ${error.message}`);
-              console.log(`⚠️ Error details:`, error);
-              return resolve(null);
-            }
-
-            // Handle buffer - can be number or Buffer
-            if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
-              // Parse 32-bit signed integer (little-endian)
-              const angle = buffer.readInt32LE(0);
-              logger.debug(`📡 DOA Angle read via Node USB: ${angle}°`);
-              console.log(`📡 DOA Angle read via Node USB: ${angle}°`);
-              resolve(angle);
-            } else {
-              const bufferInfo = Buffer.isBuffer(buffer)
-                ? `length ${buffer.length}`
-                : typeof buffer === "number"
-                  ? `number ${buffer}`
-                  : "null";
-              logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-              console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-              resolve(null);
-            }
+          } catch (cleanupError: any) {
+            // Ignore cleanup errors
           }
-        );
+          resolve(null);
+        }
       });
     } catch (usbError: any) {
       logger.debug(
@@ -209,10 +225,12 @@ export class DOAService {
 import usb.core
 import usb.util
 import struct
+import sys
 
 # Find ReSpeaker USB Mic Array
 dev = usb.core.find(idVendor=0x2886, idProduct=0x0018)
 if dev is None:
+    print("ERROR: Device not found", file=sys.stderr)
     exit(1)
 
 try:
@@ -223,8 +241,12 @@ try:
         angle = struct.unpack('<i', result)[0]
         print(angle)
     else:
+        print(f"ERROR: Invalid response length: {len(result)}", file=sys.stderr)
         exit(1)
 except Exception as e:
+    print(f"ERROR: {str(e)}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
     exit(1)
 `;
 
@@ -250,7 +272,7 @@ except Exception as e:
       }
     } catch (error: any) {
       // Only log as warning if it's not a missing module error
-      if (error?.stderr?.includes("ModuleNotFoundError")) {
+      if (error?.stderr?.includes("ModuleNotFoundError") || error?.message?.includes("ModuleNotFoundError")) {
         logger.debug(
           `⚠️ Python 'usb' module not installed. Install with: pip3 install pyusb`
         );
@@ -263,20 +285,24 @@ except Exception as e:
 
       // Always show stderr if available
       if (error.stderr) {
-        const stderrStr = error.stderr.toString();
-        logger.warn(`⚠️ Python stderr: ${stderrStr}`);
-        console.log(`⚠️ Python stderr: ${stderrStr}`);
+        const stderrStr = typeof error.stderr === 'string' ? error.stderr : error.stderr.toString();
+        if (stderrStr.trim()) {
+          logger.warn(`⚠️ Python stderr: ${stderrStr}`);
+          console.log(`⚠️ Python stderr: ${stderrStr}`);
+        }
       }
-
+      
       // Also show stdout if available (might contain error info)
       if (error.stdout) {
-        const stdoutStr = error.stdout.toString();
-        logger.debug(`⚠️ Python stdout: ${stdoutStr}`);
-        console.log(`⚠️ Python stdout: ${stdoutStr}`);
+        const stdoutStr = typeof error.stdout === 'string' ? error.stdout : error.stdout.toString();
+        if (stdoutStr.trim()) {
+          logger.debug(`⚠️ Python stdout: ${stdoutStr}`);
+          console.log(`⚠️ Python stdout: ${stdoutStr}`);
+        }
       }
-
+      
       // Show error code
-      if (error.code) {
+      if (error.code !== undefined) {
         logger.debug(`⚠️ Python error code: ${error.code}`);
         console.log(`⚠️ Python error code: ${error.code}`);
       }
