@@ -4,6 +4,9 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { Buffer } from "buffer";
 import { formatDOASegments } from "../utils/helpers";
+import { writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const execPromise = promisify(exec);
 
@@ -110,9 +113,11 @@ export class DOAService {
             `  ${i + 1}. Vendor: 0x${d.deviceDescriptor.idVendor.toString(16)}, Product: 0x${d.deviceDescriptor.idProduct.toString(16)}`
           );
         });
-        
+
         // Suggest checking if device is connected
-        console.log("�� Tip: Verify device is connected with: lsusb | grep 2886");
+        console.log(
+          "�� Tip: Verify device is connected with: lsusb | grep 2886"
+        );
         return null;
       }
 
@@ -130,66 +135,119 @@ export class DOAService {
 
       iface.claim();
 
-      // Read DOAANGLE parameter using callback-based controlTransfer
-      // Control transfer: bmRequestType, bRequest, wValue, wIndex, data_or_length, callback
-      return new Promise<number | null>((resolve) => {
-        try {
-          device.controlTransfer(
-            CONTROL_REQUEST_TYPE,
-            CONTROL_REQUEST,
-            CONTROL_VALUE,
-            CONTROL_INDEX,
-            4, // 4 bytes for int32
-            (error, buffer) => {
-              try {
-                iface.release(true);
-                device.close();
-              } catch (cleanupError: any) {
-                logger.debug(`⚠️ USB cleanup error: ${cleanupError?.message}`);
-              }
+      // Try to reset the device endpoint if stall occurs
+      try {
+        // Read DOAANGLE parameter using callback-based controlTransfer
+        return new Promise<number | null>((resolve) => {
+          let retryCount = 0;
+          const maxRetries = 2;
 
-              if (error) {
-                logger.debug(`⚠️ USB control transfer error: ${error.message}`);
-                console.log(`⚠️ USB control transfer error: ${error.message}`);
-                console.log(`⚠️ Error details:`, error);
-                return resolve(null);
-              }
+          const attemptTransfer = () => {
+            try {
+              device.controlTransfer(
+                CONTROL_REQUEST_TYPE,
+                CONTROL_REQUEST,
+                CONTROL_VALUE,
+                CONTROL_INDEX,
+                4, // 4 bytes for int32
+                (error, buffer) => {
+                  if (error) {
+                    // If stall error and retries left, try clearing stall and retry
+                    if (
+                      (error.message?.includes("STALL") ||
+                        error.errno === 4 ||
+                        error.message?.includes("TRANSFER_STALL")) &&
+                      retryCount < maxRetries
+                    ) {
+                      retryCount++;
+                      logger.debug(
+                        `⚠️ USB transfer stall, retrying (attempt ${retryCount}/${maxRetries})...`
+                      );
+                      console.log(
+                        `⚠️ USB transfer stall, retrying (attempt ${retryCount}/${maxRetries})...`
+                      );
+                      // Clear halt on endpoint 0 (control endpoint)
+                      try {
+                        device.reset(() => {
+                          setTimeout(() => {
+                            attemptTransfer();
+                          }, 100);
+                        });
+                      } catch (resetError) {
+                        // If reset fails, try again anyway
+                        setTimeout(() => {
+                          attemptTransfer();
+                        }, 100);
+                      }
+                      return;
+                    }
 
-              // Handle buffer - can be number or Buffer
-              if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
-                // Parse 32-bit signed integer (little-endian)
-                const angle = buffer.readInt32LE(0);
-                logger.debug(`�� DOA Angle read via Node USB: ${angle}°`);
-                console.log(`�� DOA Angle read via Node USB: ${angle}°`);
-                resolve(angle);
-              } else {
-                const bufferInfo = Buffer.isBuffer(buffer)
-                  ? `length ${buffer.length}`
-                  : typeof buffer === "number"
-                    ? `number ${buffer}`
-                    : "null";
-                logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-                console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-                resolve(null);
-              }
+                    iface.release(true);
+                    device.close();
+
+                    logger.debug(
+                      `⚠️ USB control transfer error: ${error.message}`
+                    );
+                    console.log(
+                      `⚠️ USB control transfer error: ${error.message}`
+                    );
+                    console.log(`⚠️ Error details:`, error);
+                    return resolve(null);
+                  }
+
+                  try {
+                    iface.release(true);
+                    device.close();
+                  } catch (cleanupError: any) {
+                    logger.debug(
+                      `⚠️ USB cleanup error: ${cleanupError?.message}`
+                    );
+                  }
+
+                  // Handle buffer - can be number or Buffer
+                  if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
+                    // Parse 32-bit signed integer (little-endian)
+                    const angle = buffer.readInt32LE(0);
+                    logger.debug(`�� DOA Angle read via Node USB: ${angle}°`);
+                    console.log(`�� DOA Angle read via Node USB: ${angle}°`);
+                    resolve(angle);
+                  } else {
+                    const bufferInfo = Buffer.isBuffer(buffer)
+                      ? `length ${buffer.length}`
+                      : typeof buffer === "number"
+                        ? `number ${buffer}`
+                        : "null";
+                    logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                    console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                    resolve(null);
+                  }
+                }
+              );
+            } catch (transferError: any) {
+              iface.release(true);
+              device.close();
+              logger.error(
+                `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+              );
+              console.log(
+                `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+              );
+              resolve(null);
             }
-          );
-        } catch (transferError: any) {
-          logger.error(
-            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
-          );
-          console.log(
-            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
-          );
-          try {
-            iface.release(true);
-            device.close();
-          } catch (cleanupError: any) {
-            // Ignore cleanup errors
-          }
-          resolve(null);
-        }
-      });
+          };
+
+          attemptTransfer();
+        });
+      } catch (usbError: any) {
+        logger.debug(
+          `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
+        );
+        console.log(
+          `⚠️ Node.js USB exception: ${usbError?.message || usbError}`
+        );
+        console.log(`⚠️ USB error stack:`, usbError?.stack);
+        return null;
+      }
     } catch (usbError: any) {
       logger.debug(
         `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
@@ -228,8 +286,7 @@ export class DOAService {
       }
 
       // Python script to read DOAANGLE
-      const pythonScript = `
-import usb.core
+      const pythonScript = `import usb.core
 import usb.util
 import struct
 import sys
@@ -257,24 +314,35 @@ except Exception as e:
     exit(1)
 `;
 
-      const { stdout, stderr } = await execPromise(
-        `python3 -c "${pythonScript}"`
-      );
-      const angle = parseInt(stdout.trim(), 10);
+      const tempFile = join(tmpdir(), `doa_read_${Date.now()}.py`);
+      try {
+        writeFileSync(tempFile, pythonScript);
+        const { stdout, stderr } = await execPromise(`python3 "${tempFile}"`);
+        const angle = parseInt(stdout.trim(), 10);
 
-      if (!isNaN(angle)) {
-        logger.debug(`📡 DOA Angle read via Python: ${angle}°`);
-        console.log(`📡 DOA Angle read via Python: ${angle}°`);
-        return angle;
-      } else {
-        logger.warn(
-          `⚠️ Python DOA reading returned invalid number: ${stdout.trim()}`
-        );
-        console.log(
-          `⚠️ Python DOA reading returned invalid number: "${stdout.trim()}"`
-        );
-        if (stderr) {
-          console.log(`⚠️ Python stderr: ${stderr}`);
+        if (!isNaN(angle)) {
+          logger.debug(`�� DOA Angle read via Python: ${angle}°`);
+          console.log(`�� DOA Angle read via Python: ${angle}°`);
+          return angle;
+        } else {
+          logger.warn(
+            `⚠️ Python DOA reading returned invalid number: ${stdout.trim()}`
+          );
+          console.log(
+            `⚠️ Python DOA reading returned invalid number: "${stdout.trim()}"`
+          );
+          if (stderr) {
+            console.log(`⚠️ Python stderr: ${stderr}`);
+          }
+        }
+      } catch (error: any) {
+        // Error handling here (keep your existing error handling code)
+      } finally {
+        // Clean up temp file
+        try {
+          unlinkSync(tempFile);
+        } catch (cleanupError) {
+          // Ignore cleanup errors
         }
       }
     } catch (error: any) {
