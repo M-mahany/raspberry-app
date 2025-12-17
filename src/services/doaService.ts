@@ -17,7 +17,8 @@ const RESPEAKER_PRODUCT_ID = 0x0018; // ReSpeaker USB Mic Array product ID
 
 // USB Control Transfer Parameters for DOA
 // Based on respeaker/usb_4_mic_array tuning.py implementation
-const CONTROL_REQUEST_TYPE = 0xc0; // Vendor request, device to host (IN) - bit 7=1 for reading
+// Python uses 0x40 but pyusb auto-detects direction - Node.js needs explicit 0xC0 for IN
+const CONTROL_REQUEST_TYPE = 0xc0; // IN transfer (device to host) - bit 7=1 for reading
 const CONTROL_REQUEST = 0x00; // Custom request code
 const CONTROL_VALUE = 0x0200; // Parameter ID for DOAANGLE
 const CONTROL_INDEX = 0x0000;
@@ -81,6 +82,9 @@ export class DOAService {
         return nodeResult;
       }
       console.log("⚠️ Node USB DOA read also failed");
+
+      // If both fail, check if device might be reconnecting after power cycle
+      // Don't log as error if device was recently power cycled
       return null;
     } catch (error: any) {
       logger.error(`❌ Error reading DOA angle: ${error?.message || error}`);
@@ -95,13 +99,13 @@ export class DOAService {
   private static async readDOAViaNodeUSB(): Promise<number | null> {
     try {
       const devices = usb.getDeviceList();
-      const device = devices.find(
+      const foundDevice = devices.find(
         (d) =>
           d.deviceDescriptor.idVendor === RESPEAKER_VENDOR_ID &&
           d.deviceDescriptor.idProduct === RESPEAKER_PRODUCT_ID
       );
 
-      if (!device) {
+      if (!foundDevice) {
         logger.debug("📡 ReSpeaker USB Mic Array not found via USB");
         console.log("📡 ReSpeaker USB Mic Array not found via USB");
         console.log(
@@ -113,8 +117,6 @@ export class DOAService {
             `  ${i + 1}. Vendor: 0x${d.deviceDescriptor.idVendor.toString(16)}, Product: 0x${d.deviceDescriptor.idProduct.toString(16)}`
           );
         });
-
-        // Suggest checking if device is connected
         console.log(
           "�� Tip: Verify device is connected with: lsusb | grep 2886"
         );
@@ -122,132 +124,15 @@ export class DOAService {
       }
 
       console.log(
-        `📡 Found ReSpeaker device: Vendor ${device.deviceDescriptor.idVendor.toString(16)}, Product ${device.deviceDescriptor.idProduct.toString(16)}`
+        `📡 Found ReSpeaker device: Vendor ${foundDevice.deviceDescriptor.idVendor.toString(16)}, Product ${foundDevice.deviceDescriptor.idProduct.toString(16)}`
       );
 
-      device.open();
-      const interfaceNumber = 0; // Usually interface 0
-      const iface = device.interface(interfaceNumber);
-
-      if (iface.isKernelDriverActive()) {
-        iface.detachKernelDriver();
-      }
-
-      iface.claim();
-
-      // Try to reset the device endpoint if stall occurs
-      try {
-        // Read DOAANGLE parameter using callback-based controlTransfer
-        return new Promise<number | null>((resolve) => {
-          let retryCount = 0;
-          const maxRetries = 2;
-
-          const attemptTransfer = () => {
-            try {
-              device.controlTransfer(
-                CONTROL_REQUEST_TYPE,
-                CONTROL_REQUEST,
-                CONTROL_VALUE,
-                CONTROL_INDEX,
-                4, // 4 bytes for int32
-                (error, buffer) => {
-                  if (error) {
-                    // If stall error and retries left, try clearing stall and retry
-                    if (
-                      (error.message?.includes("STALL") ||
-                        error.errno === 4 ||
-                        error.message?.includes("TRANSFER_STALL")) &&
-                      retryCount < maxRetries
-                    ) {
-                      retryCount++;
-                      logger.debug(
-                        `⚠️ USB transfer stall, retrying (attempt ${retryCount}/${maxRetries})...`
-                      );
-                      console.log(
-                        `⚠️ USB transfer stall, retrying (attempt ${retryCount}/${maxRetries})...`
-                      );
-                      // Clear halt on endpoint 0 (control endpoint)
-                      try {
-                        device.reset(() => {
-                          setTimeout(() => {
-                            attemptTransfer();
-                          }, 100);
-                        });
-                      } catch (resetError) {
-                        // If reset fails, try again anyway
-                        setTimeout(() => {
-                          attemptTransfer();
-                        }, 100);
-                      }
-                      return;
-                    }
-
-                    iface.release(true);
-                    device.close();
-
-                    logger.debug(
-                      `⚠️ USB control transfer error: ${error.message}`
-                    );
-                    console.log(
-                      `⚠️ USB control transfer error: ${error.message}`
-                    );
-                    console.log(`⚠️ Error details:`, error);
-                    return resolve(null);
-                  }
-
-                  try {
-                    iface.release(true);
-                    device.close();
-                  } catch (cleanupError: any) {
-                    logger.debug(
-                      `⚠️ USB cleanup error: ${cleanupError?.message}`
-                    );
-                  }
-
-                  // Handle buffer - can be number or Buffer
-                  if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
-                    // Parse 32-bit signed integer (little-endian)
-                    const angle = buffer.readInt32LE(0);
-                    logger.debug(`�� DOA Angle read via Node USB: ${angle}°`);
-                    console.log(`�� DOA Angle read via Node USB: ${angle}°`);
-                    resolve(angle);
-                  } else {
-                    const bufferInfo = Buffer.isBuffer(buffer)
-                      ? `length ${buffer.length}`
-                      : typeof buffer === "number"
-                        ? `number ${buffer}`
-                        : "null";
-                    logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-                    console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
-                    resolve(null);
-                  }
-                }
-              );
-            } catch (transferError: any) {
-              iface.release(true);
-              device.close();
-              logger.error(
-                `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
-              );
-              console.log(
-                `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
-              );
-              resolve(null);
-            }
-          };
-
-          attemptTransfer();
-        });
-      } catch (usbError: any) {
-        logger.debug(
-          `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
-        );
-        console.log(
-          `⚠️ Node.js USB exception: ${usbError?.message || usbError}`
-        );
-        console.log(`⚠️ USB error stack:`, usbError?.stack);
-        return null;
-      }
+      // Use attemptDOARead with 0xC0 (IN transfer for reading)
+      const result = await this.attemptDOARead(
+        foundDevice,
+        CONTROL_REQUEST_TYPE
+      );
+      return result;
     } catch (usbError: any) {
       logger.debug(
         `⚠️ Node.js USB control transfer failed: ${usbError?.message || usbError}`
@@ -256,6 +141,177 @@ export class DOAService {
       console.log(`⚠️ USB error stack:`, usbError?.stack);
       return null;
     }
+  }
+
+  // Helper method to attempt DOA read with a specific request type
+  private static async attemptDOARead(
+    foundDevice: any,
+    requestType: number
+  ): Promise<number | null> {
+    // Helper function to open and setup device
+    const openAndSetupDevice = () => {
+      const device = foundDevice;
+
+      // CRITICAL: Open device first
+      device.open();
+
+      // CRITICAL: Set configuration - must match device's active configuration
+      try {
+        // Get active configuration or set to 1
+        const config = device.configDescriptor;
+        if (config) {
+          device.setConfiguration(config.bConfigurationValue);
+        } else {
+          device.setConfiguration(1);
+        }
+      } catch (e) {
+        // If already configured, ignore error
+      }
+
+      const interfaceNumber = 0;
+      const iface = device.interface(interfaceNumber);
+
+      // CRITICAL: Detach kernel driver if active (allows us to claim interface)
+      if (iface.isKernelDriverActive()) {
+        iface.detachKernelDriver();
+      }
+
+      // CRITICAL: Claim interface (exclusive access)
+      iface.claim();
+
+      return { device, iface };
+    };
+
+    // Helper function to close device
+    const closeDevice = (device: any, iface: any) => {
+      try {
+        if (iface) {
+          iface.release(true);
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      try {
+        if (device) {
+          device.close();
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    };
+
+    let retryCount = 0;
+    const maxRetries = 2;
+
+    return new Promise<number | null>((resolve) => {
+      const attemptTransfer = () => {
+        let device: any = null;
+        let iface: any = null;
+
+        try {
+          // Open and setup device for this attempt
+          const setup = openAndSetupDevice();
+          device = setup.device;
+          iface = setup.iface;
+
+          device.controlTransfer(
+            requestType,
+            CONTROL_REQUEST,
+            CONTROL_VALUE,
+            CONTROL_INDEX,
+            4, // 4 bytes for int32
+            (error: Error | null, buffer: Buffer | undefined) => {
+              try {
+                if (error) {
+                  const usbError = error as Error & { errno?: number };
+                  const isStall =
+                    usbError.message?.includes("STALL") ||
+                    usbError.errno === 4 ||
+                    usbError.message?.includes("TRANSFER_STALL") ||
+                    usbError.message?.includes("PIPE");
+
+                  // Close device before retry
+                  closeDevice(device, iface);
+
+                  if (isStall && retryCount < maxRetries) {
+                    retryCount++;
+                    logger.debug(
+                      `⚠️ USB transfer error (requestType 0x${requestType.toString(16)}), retrying (attempt ${retryCount}/${maxRetries})...`
+                    );
+                    console.log(
+                      `⚠️ USB transfer error (requestType 0x${requestType.toString(16)}), retrying (attempt ${retryCount}/${maxRetries})...`
+                    );
+
+                    // Wait before retry and reopen device - give device time to recover
+                    setTimeout(() => {
+                      attemptTransfer();
+                    }, 300); // Increased from 200ms to 300ms for better recovery
+                    return;
+                  }
+
+                  // Max retries reached or non-stall error
+                  logger.debug(
+                    `⚠️ USB control transfer error (requestType 0x${requestType.toString(16)}): ${usbError.message}`
+                  );
+                  console.log(
+                    `⚠️ USB control transfer error (requestType 0x${requestType.toString(16)}): ${usbError.message}`
+                  );
+                  if (usbError.errno) {
+                    console.log(`⚠️ Error code: ${usbError.errno}`);
+                  }
+                  return resolve(null);
+                }
+
+                // Success - parse buffer
+                if (buffer && Buffer.isBuffer(buffer) && buffer.length >= 4) {
+                  const angle = buffer.readInt32LE(0);
+                  closeDevice(device, iface);
+                  logger.debug(
+                    `�� DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
+                  );
+                  console.log(
+                    `�� DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
+                  );
+                  resolve(angle);
+                } else {
+                  closeDevice(device, iface);
+                  const bufferInfo = Buffer.isBuffer(buffer)
+                    ? `length ${buffer.length}`
+                    : typeof buffer === "number"
+                      ? `number ${buffer}`
+                      : "null";
+                  logger.warn(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                  console.log(`⚠️ Invalid buffer from USB: ${bufferInfo}`);
+                  resolve(null);
+                }
+              } catch (callbackError: any) {
+                // Catch any exceptions in callback
+                closeDevice(device, iface);
+                logger.error(
+                  `⚠️ Exception in USB callback: ${callbackError?.message}`
+                );
+                console.log(
+                  `⚠️ Exception in USB callback: ${callbackError?.message}`
+                );
+                resolve(null);
+              }
+            }
+          );
+        } catch (transferError: any) {
+          closeDevice(device, iface);
+          logger.error(
+            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+          );
+          console.log(
+            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+          );
+          resolve(null);
+        }
+      };
+
+      // Start first attempt
+      attemptTransfer();
+    });
   }
 
   /**
@@ -285,33 +341,49 @@ export class DOAService {
         return null;
       }
 
-      // Python script to read DOAANGLE
-      const pythonScript = `import usb.core
-import usb.util
-import struct
-import sys
+      // Python script to read DOAANGLE using official Tuning class
+      const pythonScript = `import sys
+import os
+
+# Add the usb_4_mic_array directory to Python path
+sys.path.insert(0, '/home/ops-ai-node33/usb_4_mic_array')
+
+from tuning import Tuning
+import usb.core
+import time
 
 # Find ReSpeaker USB Mic Array
 dev = usb.core.find(idVendor=0x2886, idProduct=0x0018)
 if dev is None:
     print("ERROR: Device not found", file=sys.stderr)
-    exit(1)
+    sys.exit(1)
 
-try:
-    dev.set_configuration()
-    # Read DOAANGLE parameter (parameter ID 0x0200)
-    result = dev.ctrl_transfer(0x40, 0x00, 0x0200, 0x0000, 4)
-    if len(result) == 4:
-        angle = struct.unpack('<i', result)[0]
+max_retries = 3
+retry_count = 0
+
+while retry_count <= max_retries:
+    try:
+        # Use official Tuning class - handles all USB communication properly
+        Mic_tuning = Tuning(dev)
+        angle = Mic_tuning.direction
         print(angle)
-    else:
-        print("ERROR: Invalid response length: " + str(len(result)), file=sys.stderr)
-        exit(1)
-except Exception as e:
-    print("ERROR: " + str(e), file=sys.stderr)
-    import traceback
-    traceback.print_exc(file=sys.stderr)
-    exit(1)
+        sys.exit(0)
+    except Exception as e:
+        retry_count += 1
+        if retry_count <= max_retries:
+            time.sleep(0.3)
+            try:
+                dev.reset()
+            except:
+                pass
+            continue
+        else:
+            print("ERROR: " + str(e), file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            sys.exit(1)
+
+sys.exit(1)
 `;
 
       const tempFile = join(tmpdir(), `doa_read_${Date.now()}.py`);
@@ -336,7 +408,52 @@ except Exception as e:
           }
         }
       } catch (error: any) {
-        // Error handling here (keep your existing error handling code)
+        // Only log as warning if it's not a missing module error
+        if (
+          error?.stderr?.includes("ModuleNotFoundError") ||
+          error?.message?.includes("ModuleNotFoundError")
+        ) {
+          logger.debug(
+            `⚠️ Python 'usb' module not installed. Install with: pip3 install pyusb`
+          );
+        } else {
+          logger.warn(
+            `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`
+          );
+          console.log(
+            `⚠️ Python DOA reading failed: ${error?.message || error}`
+          );
+        }
+
+        // Always show stderr if available
+        if (error.stderr) {
+          const stderrStr =
+            typeof error.stderr === "string"
+              ? error.stderr
+              : error.stderr.toString();
+          if (stderrStr.trim()) {
+            logger.warn(`⚠️ Python stderr: ${stderrStr}`);
+            console.log(`⚠️ Python stderr: ${stderrStr}`);
+          }
+        }
+
+        // Also show stdout if available (might contain error info)
+        if (error.stdout) {
+          const stdoutStr =
+            typeof error.stdout === "string"
+              ? error.stdout
+              : error.stdout.toString();
+          if (stdoutStr.trim()) {
+            logger.debug(`⚠️ Python stdout: ${stdoutStr}`);
+            console.log(`⚠️ Python stdout: ${stdoutStr}`);
+          }
+        }
+
+        // Show error code
+        if (error.code !== undefined) {
+          logger.debug(`⚠️ Python error code: ${error.code}`);
+          console.log(`⚠️ Python error code: ${error.code}`);
+        }
       } finally {
         // Clean up temp file
         try {
