@@ -87,6 +87,19 @@ app.get("/reboot", async (_req: Request, res: Response) => {
   }
 });
 
+app.get("/shutdown", async (_req: Request, res: Response) => {
+  try {
+    SystemService.shutdownDevice();
+    res
+      .status(200)
+      .json({ message: "Device will be shut down in 3 seconds..." });
+  } catch (error: any) {
+    res
+      .status(500)
+      .json({ message: `Error shutting down device: ${error?.message || error}` });
+  }
+});
+
 // app.get("/refresh_tailscale", async (_req: Request, res: Response) => {
 //   try {
 //     SystemService.refreshTailscale();

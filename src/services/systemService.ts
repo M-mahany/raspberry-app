@@ -416,6 +416,17 @@ export class SystemService {
     }
   }
 
+  static async shutdownDevice() {
+    try {
+      // wait 3 seconds before shutting down
+      await waitForMs(3000);
+
+      await execPromise("sudo shutdown -h now");
+    } catch (error: any) {
+      logger.error(`Error shutting down device ${error?.message || error}`);
+    }
+  }
+
   static async refreshTailscale() {
     try {
       logger.info("Restarting Tailscale service...");
