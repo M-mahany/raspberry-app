@@ -7,6 +7,8 @@ import { formatDOASegments } from "../utils/helpers";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import * as path from "path";
+import * as fs from "fs";
 
 const execPromise = promisify(exec);
 
@@ -66,8 +68,8 @@ export class DOAService {
    */
   static async readDOAAngle(): Promise<number | null> {
     try {
-      // Try Python script first (more reliable, based on respeaker tools)
-      console.log("🔍 Attempting Python DOA read...");
+      // Try Python script first
+      console.log("🔍 Python DOA read...");
       const pythonResult = await this.readDOAViaPython();
       if (pythonResult !== null) {
         console.log(`✅ Python DOA read successful: ${pythonResult}°`);
@@ -118,7 +120,7 @@ export class DOAService {
           );
         });
         console.log(
-          "�� Tip: Verify device is connected with: lsusb | grep 2886"
+          "Tip: Verify device is connected with: lsusb - if not found, try to reboot the device"
         );
         return null;
       }
@@ -267,10 +269,10 @@ export class DOAService {
                   const angle = buffer.readInt32LE(0);
                   closeDevice(device, iface);
                   logger.debug(
-                    `�� DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
+                    `🔍 DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
                   );
                   console.log(
-                    `�� DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
+                    `🔍 DOA Angle read via Node USB (requestType 0x${requestType.toString(16)}): ${angle}°`
                   );
                   resolve(angle);
                 } else {
@@ -333,15 +335,15 @@ export class DOAService {
         await execPromise("python3 -c 'import usb.core'");
       } catch (pyusbCheckError: any) {
         logger.warn(
-          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb"
+          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb - if it didn't work, try apt-get install python3-pyusb or sudo apt-get install python3-pyusb"
         );
         console.log(
-          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb"
+          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb - if it didn't work, try apt-get install python3-pyusb or sudo apt-get install python3-pyusb"
         );
         return null;
       }
 
-      // Python script to read DOAANGLE using official Tuning class
+      // Python script to read DOAANGLE using Tuning class - note that there is a version incompatibility issue with the Tuning class, so you may need to update line 109 to use tobyte instead of tostring
       const pythonScript = `import sys
 import os
 
@@ -393,8 +395,8 @@ sys.exit(1)
         const angle = parseInt(stdout.trim(), 10);
 
         if (!isNaN(angle)) {
-          logger.debug(`�� DOA Angle read via Python: ${angle}°`);
-          console.log(`�� DOA Angle read via Python: ${angle}°`);
+          logger.debug(`🔍 DOA Angle read via Python: ${angle}°`);
+          console.log(`🔍 DOA Angle read via Python: ${angle}°`);
           return angle;
         } else {
           logger.warn(
@@ -838,5 +840,35 @@ sys.exit(1)
    */
   static clearDOAReadings(): void {
     this.doaReadings = [];
+  }
+
+  /**
+   * Generate DOA segments JSON file
+   * @param segments - Array of DOA segments
+   * @param recordingId - Recording ID (timestamp from filename)
+   * @param recordingDir - Directory where recordings are stored
+   * @returns Path to created JSON file
+   */
+  static generateDOAJsonFile(
+    segments: DOASegment[],
+    recordingId: string,
+    recordingDir: string
+  ): string {
+    const jsonData = {
+      recordingId,
+      timestamp: new Date().toISOString(),
+      segments: segments.map((seg) => ({
+        start: seg.start,
+        end: seg.end,
+        channel: seg.channel,
+        angle: seg.angle,
+      })),
+    };
+
+    const jsonFilePath = path.join(recordingDir, `${recordingId}.json`);
+    fs.writeFileSync(jsonFilePath, JSON.stringify(jsonData, null, 2));
+
+    logger.info(`📄 Generated DOA JSON file: ${jsonFilePath}`);
+    return jsonFilePath;
   }
 }

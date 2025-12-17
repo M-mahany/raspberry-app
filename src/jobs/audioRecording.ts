@@ -108,11 +108,16 @@ export const startRecording = async () => {
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
 
+    // Extract recording ID from filename
+    const recordingId = getFileName(rawFile).split(".")[0]; // e.g., "1765994256945"
+
     // Stop DOA monitoring and get channel segments
     const doaResult = DOAService.stopDOAMonitoring();
 
     // Prepare DOA metadata for upload
     let doaMetadata;
+    let doaJsonFilePath: string | undefined;
+
     if (
       typeof doaResult === "object" &&
       !Array.isArray(doaResult) &&
@@ -133,6 +138,18 @@ export const startRecording = async () => {
             ? segmentsResult.readings
             : undefined,
       };
+
+      // Generate JSON file when segments exist
+      if (doaMetadata.doaSegments && doaMetadata.doaSegments.length > 0) {
+        doaJsonFilePath = DOAService.generateDOAJsonFile(
+          doaMetadata.doaSegments,
+          recordingId,
+          RECORDING_DIR
+        );
+        logger.info(
+          `📄 Created DOA JSON file: ${getFileName(doaJsonFilePath)}`
+        );
+      }
 
       // Print DOA segments
       console.log("\n📊 ========== DOA SEGMENTS (Before Upload) ==========");
@@ -162,7 +179,8 @@ export const startRecording = async () => {
     RecordingService.convertAndUploadToServer(
       rawFile,
       recordingFiles,
-      doaMetadata
+      doaMetadata,
+      doaJsonFilePath
     );
   });
 
@@ -185,6 +203,7 @@ export const stopRecording = async () => {
       const doaResult = DOAService.stopDOAMonitoring();
 
       // Print DOA segments when manually stopping
+      //LOAI - FOR ME: remove when done debugging
       if (
         typeof doaResult === "object" &&
         !Array.isArray(doaResult) &&
@@ -240,6 +259,7 @@ const handleInterruptedFiles = async () => {
       );
     });
     // list of eligible .wav interrupted files (diarization files)
+    //LOAI - FOR ME: for later use if we need to use diarization files again
     const filteredWavFiles = files.filter((file) => {
       const fileNameWithoutExt = path.basename(file, ".wav");
       const rawFileName = `${fileNameWithoutExt}.raw`;

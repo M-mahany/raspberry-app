@@ -11,10 +11,10 @@ interface DOAMetadata {
   doaAngle?: number | null;
   doaData?: Array<{ angle: number; timestamp: number }>;
   doaSegments?: Array<{
-    start: number;      // milliseconds
-    end: number;       // milliseconds
-    channel: number;   // 1-4
-    angle: number;     // DOA angle
+    start: number; // milliseconds
+    end: number; // milliseconds
+    channel: number; // 1-4
+    angle: number; // DOA angle
   }>;
   doaReadings?: Array<{ angle: number; timestamp: number }>;
 }
@@ -23,7 +23,8 @@ export class RecordingService {
   static async uploadRecording(
     filePath: string,
     doaMetadata?: DOAMetadata,
-    fileType: "transcript" | "diarization" = "transcript"
+    fileType: "transcript" | "diarization" = "transcript",
+    doaJsonFilePath?: string
   ): Promise<void> {
     try {
       const formData = new FormData();
@@ -31,15 +32,30 @@ export class RecordingService {
       formData.append("timeZone", getTimeZone());
       formData.append("fileType", fileType);
 
-      // Add DOA segments for transcript files (since we're not using WAV anymore)
+      // Add DOA JSON file if it exists
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
+        logger.info(
+          `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)} to upload`
+        );
+      }
+
+      // Add DOA segments for transcript files
       if (fileType === "transcript" && doaMetadata) {
         if (doaMetadata.doaSegments && doaMetadata.doaSegments.length > 0) {
-          formData.append("doaSegments", JSON.stringify(doaMetadata.doaSegments));
+          formData.append(
+            "doaSegments",
+            JSON.stringify(doaMetadata.doaSegments)
+          );
         }
+        //LOAI - FOR ME: check if we need to add this since we're getting the needed data from segments already "doaMetadata.doaReadings" and "the old format"
         if (doaMetadata.doaReadings && doaMetadata.doaReadings.length > 0) {
-          formData.append("doaReadings", JSON.stringify(doaMetadata.doaReadings));
+          formData.append(
+            "doaReadings",
+            JSON.stringify(doaMetadata.doaReadings)
+          );
         }
-        // Backward compatibility: also include old format if present
+        // LOAI - FOR ME: check if we need to add this since we're getting the needed data from segments already "doaMetadata.doaReadings" and "the old format"
         if (
           doaMetadata.doaAngle !== undefined &&
           doaMetadata.doaAngle !== null
@@ -50,8 +66,9 @@ export class RecordingService {
           formData.append("doaData", JSON.stringify(doaMetadata.doaData));
         }
       }
-      
+
       // Add DOA metadata for diarization files (backward compatibility)
+      //LOAI - FOR ME: check if we need since we're not using diarization files anymore
       if (fileType === "diarization" && doaMetadata) {
         if (
           doaMetadata.doaAngle !== undefined &&
@@ -64,8 +81,8 @@ export class RecordingService {
         }
       }
 
-      // Add recording ID to link transcript and diarization files
-      const recordingId = getFileName(filePath).split("_")[0];
+      // Add recording ID to link transcript and diarization files (we're not using diarization files anymore) - will be removed later. LOAI - FOR ME: check if we need to add this since we're not using diarization files anymore
+      const recordingId = getFileName(filePath).split(".")[0];
       formData.append("recordingId", recordingId);
 
       await serverAPI.post("/recordings/device-upload", formData, {
@@ -77,11 +94,28 @@ export class RecordingService {
       logger.info(
         `✅ Uploaded ${getFileName(filePath)} (${fileType}) successfully to the server`
       );
+
+      // Delete audio file after successful upload
       fs.unlink(filePath, (err) => {
         if (err) {
           logger.error(`🚨 Error deleting file after upload: ${err}`);
         }
       });
+
+      // Delete JSON file after successful upload if it was attached
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        fs.unlink(doaJsonFilePath, (err) => {
+          if (err) {
+            logger.error(
+              `🚨 Error deleting DOA JSON file after upload: ${err}`
+            );
+          } else {
+            logger.info(
+              `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`
+            );
+          }
+        });
+      }
     } catch (error: any) {
       if (
         isAxiosError(error) &&
@@ -99,6 +133,14 @@ export class RecordingService {
             );
           }
         });
+        // Delete JSON file if audio was already uploaded
+        if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+          fs.unlink(doaJsonFilePath, (err) => {
+            if (err) {
+              logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+            }
+          });
+        }
       } else {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`
@@ -114,14 +156,25 @@ export class RecordingService {
               );
             }
           });
+          // Delete JSON file if audio file is invalid
+          if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+            fs.unlink(doaJsonFilePath, (err) => {
+              if (err) {
+                logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+              }
+            });
+          }
         }
+        // Keep both files for retry if upload failed (don't delete)
       }
     }
   }
+
   static async convertAndUploadToServer(
     rawFile: string,
     currentRecordingFileSet?: Set<string>,
-    doaMetadata?: DOAMetadata
+    doaMetadata?: DOAMetadata,
+    doaJsonFilePath?: string
   ) {
     try {
       // Check if file is multi-channel (6 channels) or single channel
@@ -130,22 +183,26 @@ export class RecordingService {
         await ffmpegService.convertMultiChannelAudio(rawFile);
 
       if (conversionResult.transcriptFile && conversionResult.diarizationFile) {
-        // Multi-channel recording: upload transcript file with DOA segments
+        // Multi-channel recording: upload transcript file with DOA segments and JSON file
         logger.info(
           `⬆️ Uploading transcript file: ${getFileName(conversionResult.transcriptFile)} to server...`
         );
         await this.uploadRecording(
           conversionResult.transcriptFile,
           doaMetadata, // Pass DOA segments here
-          "transcript"
+          "transcript",
+          doaJsonFilePath // Pass JSON file path to upload together
         );
 
         // Note: We're no longer uploading diarization WAV file
         // Delete it if it was created
+        //LOAI - FOR ME: simplified the code since we're not using diarization files anymore
         if (conversionResult.diarizationFile) {
           try {
             fs.unlinkSync(conversionResult.diarizationFile);
-            logger.info(`🗑️ Deleted diarization file: ${getFileName(conversionResult.diarizationFile)}`);
+            logger.info(
+              `🗑️ Deleted diarization file: ${getFileName(conversionResult.diarizationFile)}`
+            );
           } catch (err) {
             logger.warn(`⚠️ Could not delete diarization file: ${err}`);
           }
@@ -160,7 +217,12 @@ export class RecordingService {
           logger.info(
             `⬆️ Uploading file: ${getFileName(mp3File)} to server...`
           );
-          await this.uploadRecording(mp3File, undefined, "transcript");
+          await this.uploadRecording(
+            mp3File,
+            undefined,
+            "transcript",
+            doaJsonFilePath // Pass JSON file path to upload together
+          );
         }
       }
 
@@ -171,6 +233,16 @@ export class RecordingService {
       logger.error(
         `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`
       );
+
+      // Clean up JSON file if audio conversion fails
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        try {
+          fs.unlinkSync(doaJsonFilePath);
+          logger.warn(`⚠️ Deleted DOA JSON file due to conversion error`);
+        } catch (err) {
+          logger.warn(`⚠️ Could not delete DOA JSON file: ${err}`);
+        }
+      }
     }
   }
   static async killExistingRecordings() {

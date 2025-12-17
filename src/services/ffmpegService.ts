@@ -14,6 +14,7 @@ interface MetadataMedia {
 
 // Metadata for conversion results - new interface for teh conversion results
 // transcriptFile: MP3 for Whisper, diarizationFile: WAV for diarization
+//LOAI - FOR ME: remove diarizationFile since we're not using it anymore - later
 interface ConversionResult {
   transcriptFile: string | null;
   diarizationFile: string | null;
@@ -27,7 +28,7 @@ export class ffmpegService {
       const { fileSize } = await this.getMediaMetadata(rawFile);
       if (!fileSize) {
         logger.warn(
-          `⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`,
+          `⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`
         );
         return null;
       }
@@ -64,10 +65,10 @@ export class ffmpegService {
    * - Channels 1-4 → 4-channel WAV (for speaker diarization)
    */
   static async convertMultiChannelAudio(
-    rawFile: string,
+    rawFile: string
   ): Promise<ConversionResult> {
     const baseName = rawFile.replace(".raw", "");
-    const transcriptFile = `${baseName}_transcript.mp3`;
+    const transcriptFile = `${baseName}.mp3`;
     const diarizationFile = `${baseName}_diarization.wav`;
 
     try {
@@ -75,7 +76,7 @@ export class ffmpegService {
       const { fileSize } = await this.getMediaMetadata(rawFile);
       if (!fileSize) {
         logger.warn(
-          `⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`,
+          `⚠️ File ${getFileName(rawFile)} is corrupted, will not be converted.`
         );
         return { transcriptFile: null, diarizationFile: null };
       }
@@ -107,7 +108,7 @@ export class ffmpegService {
       };
     } catch (error: any) {
       logger.error(
-        `🚨 Multi-channel conversion failed: ${error?.message || error}`,
+        `🚨 Multi-channel conversion failed: ${error?.message || error}`
       );
       return { transcriptFile: null, diarizationFile: null };
     }
@@ -118,7 +119,7 @@ export class ffmpegService {
    */
   private static async convertChannel0ToMp3(
     rawFile: string,
-    outputFile: string,
+    outputFile: string
   ): Promise<boolean | unknown> {
     return new Promise((resolve, reject) => {
       ffmpeg()
@@ -144,14 +145,12 @@ export class ffmpegService {
         .format("mp3")
         .on("end", () => {
           logger.info(
-            `🎵 Converted Channel 0 to MP3: ${getFileName(outputFile)}`,
+            `🎵 Converted Channel 0 to MP3: ${getFileName(outputFile)}`
           );
           resolve(true);
         })
         .on("error", (err) => {
-          logger.error(
-            `⚠️ Error converting Channel 0 to MP3: ${err.message}`,
-          );
+          logger.error(`⚠️ Error converting Channel 0 to MP3: ${err.message}`);
           reject(err);
         })
         .save(outputFile);
@@ -163,8 +162,8 @@ export class ffmpegService {
    */
   private static async convertChannels1To4ToWav(
     rawFile: string,
-    outputFile: string,
-  ): Promise<boolean | unknown > {
+    outputFile: string
+  ): Promise<boolean | unknown> {
     return new Promise((resolve, reject) => {
       ffmpeg()
         .input(rawFile)
@@ -194,13 +193,13 @@ export class ffmpegService {
         .format("wav")
         .on("end", () => {
           logger.info(
-            `🎵 Converted Channels 1-4 to WAV: ${getFileName(outputFile)}`,
+            `🎵 Converted Channels 1-4 to WAV: ${getFileName(outputFile)}`
           );
           resolve(true);
         })
         .on("error", (err) => {
           logger.error(
-            `⚠️ Error converting Channels 1-4 to WAV: ${err.message}`,
+            `⚠️ Error converting Channels 1-4 to WAV: ${err.message}`
           );
           reject(err);
         })
@@ -218,17 +217,17 @@ export class ffmpegService {
               fs.unlinkSync(fileInput);
               return reject(
                 new Error(
-                  `Invalid media file: ${getFileName(fileInput)}, file is deleted`,
-                ),
+                  `Invalid media file: ${getFileName(fileInput)}, file is deleted`
+                )
               );
             } catch (err: any) {
               logger.error(
-                `error deleting corrupted file ${getFileName(fileInput)}`,
+                `error deleting corrupted file ${getFileName(fileInput)}`
               );
               return reject(
                 new Error(
-                  `Error deleting corrupted file ${getFileName(fileInput)}: ${err?.message || err}`,
-                ),
+                  `Error deleting corrupted file ${getFileName(fileInput)}: ${err?.message || err}`
+                )
               );
             }
           }
