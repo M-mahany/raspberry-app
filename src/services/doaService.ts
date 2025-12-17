@@ -14,7 +14,7 @@ const RESPEAKER_PRODUCT_ID = 0x0018; // ReSpeaker USB Mic Array product ID
 
 // USB Control Transfer Parameters for DOA
 // Based on respeaker/usb_4_mic_array tuning.py implementation
-const CONTROL_REQUEST_TYPE = 0x40; // Vendor request, host to device
+const CONTROL_REQUEST_TYPE = 0xc0; // Vendor request, device to host (IN) - bit 7=1 for reading
 const CONTROL_REQUEST = 0x00; // Custom request code
 const CONTROL_VALUE = 0x0200; // Parameter ID for DOAANGLE
 const CONTROL_INDEX = 0x0000;
@@ -183,6 +183,27 @@ export class DOAService {
    */
   private static async readDOAViaPython(): Promise<number | null> {
     try {
+      // Check if python3 is available first
+      try {
+        await execPromise("python3 --version");
+      } catch (pyCheckError: any) {
+        logger.debug("⚠️ python3 not available, skipping Python DOA read");
+        return null;
+      }
+
+      // Check if pyusb is installed
+      try {
+        await execPromise("python3 -c 'import usb.core'");
+      } catch (pyusbCheckError: any) {
+        logger.warn(
+          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb"
+        );
+        console.log(
+          "⚠️ Python 'usb' module (pyusb) not installed. Install with: pip3 install pyusb"
+        );
+        return null;
+      }
+
       // Python script to read DOAANGLE
       const pythonScript = `
 import usb.core
@@ -228,25 +249,20 @@ except Exception as e:
         }
       }
     } catch (error: any) {
-      logger.warn(
-        `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`
-      );
-      console.log(`⚠️ Python DOA reading failed: ${error?.message || error}`);
-      console.log(`⚠️ Python error code: ${error?.code}`);
-      if (error.stderr) {
-        console.log(`⚠️ Python stderr: ${error.stderr.toString()}`);
-      }
-      if (error.stdout) {
-        console.log(`⚠️ Python stdout: ${error.stdout.toString()}`);
+      // Only log as warning if it's not a missing module error
+      if (error?.stderr?.includes("ModuleNotFoundError")) {
+        logger.debug(
+          `⚠️ Python 'usb' module not installed. Install with: pip3 install pyusb`
+        );
+      } else {
+        logger.warn(
+          `⚠️ Python DOA reading failed: ${error?.message || error}. DOA data will not be available.`
+        );
+        console.log(`⚠️ Python DOA reading failed: ${error?.message || error}`);
       }
 
-      // Check if python3 is available
-      try {
-        await execPromise("python3 --version");
-        console.log("✅ python3 is available");
-      } catch (pyCheckError: any) {
-        console.log("❌ python3 is NOT available or not in PATH");
-        console.log(`   Error: ${pyCheckError?.message || pyCheckError}`);
+      if (error.stderr) {
+        console.log(`⚠️ Python stderr: ${error.stderr.toString()}`);
       }
     }
 
