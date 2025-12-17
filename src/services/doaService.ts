@@ -110,6 +110,9 @@ export class DOAService {
             `  ${i + 1}. Vendor: 0x${d.deviceDescriptor.idVendor.toString(16)}, Product: 0x${d.deviceDescriptor.idProduct.toString(16)}`
           );
         });
+        
+        // Suggest checking if device is connected
+        console.log("�� Tip: Verify device is connected with: lsusb | grep 2886");
         return null;
       }
 
@@ -172,8 +175,12 @@ export class DOAService {
             }
           );
         } catch (transferError: any) {
-          logger.error(`⚠️ Failed to initiate USB control transfer: ${transferError?.message}`);
-          console.log(`⚠️ Failed to initiate USB control transfer: ${transferError?.message}`);
+          logger.error(
+            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+          );
+          console.log(
+            `⚠️ Failed to initiate USB control transfer: ${transferError?.message}`
+          );
           try {
             iface.release(true);
             device.close();
@@ -241,10 +248,10 @@ try:
         angle = struct.unpack('<i', result)[0]
         print(angle)
     else:
-        print(f"ERROR: Invalid response length: {len(result)}", file=sys.stderr)
+        print("ERROR: Invalid response length: " + str(len(result)), file=sys.stderr)
         exit(1)
 except Exception as e:
-    print(f"ERROR: {str(e)}", file=sys.stderr)
+    print("ERROR: " + str(e), file=sys.stderr)
     import traceback
     traceback.print_exc(file=sys.stderr)
     exit(1)
@@ -272,7 +279,10 @@ except Exception as e:
       }
     } catch (error: any) {
       // Only log as warning if it's not a missing module error
-      if (error?.stderr?.includes("ModuleNotFoundError") || error?.message?.includes("ModuleNotFoundError")) {
+      if (
+        error?.stderr?.includes("ModuleNotFoundError") ||
+        error?.message?.includes("ModuleNotFoundError")
+      ) {
         logger.debug(
           `⚠️ Python 'usb' module not installed. Install with: pip3 install pyusb`
         );
@@ -285,22 +295,28 @@ except Exception as e:
 
       // Always show stderr if available
       if (error.stderr) {
-        const stderrStr = typeof error.stderr === 'string' ? error.stderr : error.stderr.toString();
+        const stderrStr =
+          typeof error.stderr === "string"
+            ? error.stderr
+            : error.stderr.toString();
         if (stderrStr.trim()) {
           logger.warn(`⚠️ Python stderr: ${stderrStr}`);
           console.log(`⚠️ Python stderr: ${stderrStr}`);
         }
       }
-      
+
       // Also show stdout if available (might contain error info)
       if (error.stdout) {
-        const stdoutStr = typeof error.stdout === 'string' ? error.stdout : error.stdout.toString();
+        const stdoutStr =
+          typeof error.stdout === "string"
+            ? error.stdout
+            : error.stdout.toString();
         if (stdoutStr.trim()) {
           logger.debug(`⚠️ Python stdout: ${stdoutStr}`);
           console.log(`⚠️ Python stdout: ${stdoutStr}`);
         }
       }
-      
+
       // Show error code
       if (error.code !== undefined) {
         logger.debug(`⚠️ Python error code: ${error.code}`);
