@@ -261,8 +261,24 @@ except Exception as e:
         console.log(`⚠️ Python DOA reading failed: ${error?.message || error}`);
       }
 
+      // Always show stderr if available
       if (error.stderr) {
-        console.log(`⚠️ Python stderr: ${error.stderr.toString()}`);
+        const stderrStr = error.stderr.toString();
+        logger.warn(`⚠️ Python stderr: ${stderrStr}`);
+        console.log(`⚠️ Python stderr: ${stderrStr}`);
+      }
+
+      // Also show stdout if available (might contain error info)
+      if (error.stdout) {
+        const stdoutStr = error.stdout.toString();
+        logger.debug(`⚠️ Python stdout: ${stdoutStr}`);
+        console.log(`⚠️ Python stdout: ${stdoutStr}`);
+      }
+
+      // Show error code
+      if (error.code) {
+        logger.debug(`⚠️ Python error code: ${error.code}`);
+        console.log(`⚠️ Python error code: ${error.code}`);
       }
     }
 
