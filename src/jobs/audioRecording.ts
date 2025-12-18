@@ -102,7 +102,7 @@ export const startRecording = async () => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  micInputStream.on("data", function (data: Buffer) {
+  micInputStream.on("data", function () {
     micLastActive = Date.now();
     isMicActive = true;
   });

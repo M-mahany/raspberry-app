@@ -130,7 +130,7 @@ export class DOAService {
     }
   }
 
-  // Helper method to attempt DOA read with a specific request type
+  // Helper method to attempt DOA read with a specific request type - Tuning class implementation
   private static async attemptDOARead(
     foundDevice: any,
     requestType: number
@@ -501,33 +501,34 @@ sys.exit(1)
 
   /**
    * Start monitoring DOA angle during recording
-   * Samples DOA every 1-2 seconds and stores readings with timestamps
+   * Sampling interval is 500ms - but the actual sampling interval is determined by the samplingIntervalMs parameter "which is set to 100ms in the audioRecording.ts file"
    */
-  static startDOAMonitoring(samplingIntervalMs: number = 2000): void {
-    if (this.isMonitoring) {
-      logger.warn("⚠️ DOA monitoring is already active");
-      return;
-    }
+  // LOAI - FOR ME: commented out the old startDOAMonitoring method since we're using the new startDOAMonitoringWithChannels method
+  // static startDOAMonitoring(samplingIntervalMs: number = 500): void {
+  //   if (this.isMonitoring) {
+  //     logger.warn("⚠️ DOA monitoring is already active");
+  //     return;
+  //   }
 
-    this.isMonitoring = true;
-    this.doaReadings = [];
-    logger.info(
-      `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`
-    );
+  //   this.isMonitoring = true;
+  //   this.doaReadings = [];
+  //   logger.info(
+  //     `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`
+  //   );
 
-    this.doaMonitoringInterval = setInterval(async () => {
-      const angle = await this.readDOAAngle();
-      if (angle !== null) {
-        this.doaReadings.push({
-          angle,
-          timestamp: Date.now(),
-        });
-        logger.debug(
-          `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
-        );
-      }
-    }, samplingIntervalMs);
-  }
+  //   this.doaMonitoringInterval = setInterval(async () => {
+  //     const angle = await this.readDOAAngle();
+  //     if (angle !== null) {
+  //       this.doaReadings.push({
+  //         angle,
+  //         timestamp: Date.now(),
+  //       });
+  //       logger.debug(
+  //         `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
+  //       );
+  //     }
+  //   }, samplingIntervalMs);
+  // }
 
   /**
    * Start monitoring DOA with channel-based speech detection
@@ -657,8 +658,8 @@ sys.exit(1)
     // Calculate accuracy: 100% at center, 0% at boundaries
     const accuracy = 100 * (1 - distance / maxDistance);
 
-    // Clamp between 0 and 100
-    return Math.max(0, Math.min(100, accuracy));
+    // Clamp between 0 and 100, then round to 1 decimal place
+    return Math.round(Math.max(0, Math.min(100, accuracy)) * 10) / 10;
   }
 
   /**
