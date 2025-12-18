@@ -528,6 +528,28 @@ sys.exit(1)
       });
       console.log(`📡 Initial DOA reading: ${initialAngle}°`);
       logger.info(`📡 Initial DOA reading: ${initialAngle}°`);
+
+      // Create first segment starting from 0ms
+      const initialRelativeTime = initialTimestamp - this.recordingStartTime;
+      const initialWindowStart = Math.max(
+        0,
+        Math.floor(initialRelativeTime / samplingIntervalMs) *
+          samplingIntervalMs
+      );
+      const initialWindowEnd = initialWindowStart + samplingIntervalMs;
+      const initialMappedChannel = this.mapAngleToChannel(initialAngle);
+      const initialAccuracy = this.calculateAccuracy(
+        initialAngle,
+        initialMappedChannel
+      );
+
+      this.doaSegments.push({
+        start: initialWindowStart, // Should be 0ms
+        end: initialWindowEnd,
+        channel: initialMappedChannel,
+        angle: initialAngle,
+        accuracy: initialAccuracy,
+      });
     } else {
       console.log(
         `⚠️ Initial DOA reading failed - device may not be available`
@@ -548,9 +570,12 @@ sys.exit(1)
         });
 
         // Calculate current window start time
+        // Ensure segments always start from 0ms (handle any timing edge cases)
         const relativeTime = timestamp - this.recordingStartTime;
-        const windowStart =
-          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs;
+        const windowStart = Math.max(
+          0,
+          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs
+        );
         const windowEnd = windowStart + samplingIntervalMs;
 
         // Map angle to channel

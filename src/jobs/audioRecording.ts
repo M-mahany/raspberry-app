@@ -92,19 +92,30 @@ export const startRecording = async () => {
 
   micInputStream.pipe(outputFileStream);
 
+  let doaMonitoringStarted = false; // Track if DOA has started
+
   micInputStream.on("startComplete", async () => {
     logger.info(`🎙️ Recording started: ${fileName}`);
-    // Start DOA monitoring with channel detection
-    await DOAService.startDOAMonitoringWithChannels(recordingStartTime, 100); // Sample every 100ms
+    // Don't start DOA here - wait for first data to ensure perfect sync
   });
 
   micInputStream.on("error", (err) => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  micInputStream.on("data", function () {
+  micInputStream.on("data", async function () {
     micLastActive = Date.now();
     isMicActive = true;
+
+    // Start DOA monitoring on first data event (actual recording start)
+    if (!doaMonitoringStarted) {
+      doaMonitoringStarted = true;
+      const actualRecordingStartTime = Date.now();
+      await DOAService.startDOAMonitoringWithChannels(actualRecordingStartTime, 100);
+      logger.info(
+        `📡 DOA monitoring started at actual recording start: ${actualRecordingStartTime}`
+      );
+    }
   });
 
   outputFileStream.once("finish", async () => {
