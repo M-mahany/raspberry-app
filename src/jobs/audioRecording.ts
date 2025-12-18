@@ -105,9 +105,6 @@ export const startRecording = async () => {
   micInputStream.on("data", function (data: Buffer) {
     micLastActive = Date.now();
     isMicActive = true;
-
-    // Process audio chunk for channel-based speech detection
-    DOAService.processAudioChunk(data);
   });
 
   outputFileStream.once("finish", async () => {

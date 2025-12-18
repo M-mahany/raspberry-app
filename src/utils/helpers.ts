@@ -69,6 +69,7 @@ export function formatDOASegments(
     end: number;
     channel: number;
     angle: number;
+    accuracy?: number; // Optional for backward compatibility
   }>
 ): string {
   if (!segments || segments.length === 0) {
@@ -80,8 +81,10 @@ export function formatDOASegments(
       const startSeconds = seg.start / 1000;
       const endSeconds = seg.end / 1000;
       const duration = (seg.end - seg.start) / 1000;
+      const accuracyStr =
+        seg.accuracy !== undefined ? ` | Accuracy: ${seg.accuracy.toFixed(1)}%` : "";
 
-      return `${index + 1}. Channel ${seg.channel} | ${formatTime(startSeconds)} - ${formatTime(endSeconds)} (${duration.toFixed(1)}s) | DOA: ${seg.angle}°`;
+      return `${index + 1}. Channel ${seg.channel} | ${formatTime(startSeconds)} - ${formatTime(endSeconds)} (${duration.toFixed(1)}s) | DOA: ${seg.angle}°${accuracyStr}`;
     })
     .join("\n");
 }

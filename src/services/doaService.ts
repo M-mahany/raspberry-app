@@ -34,7 +34,8 @@ export interface DOASegment {
   start: number; // milliseconds
   end: number; // milliseconds
   channel: number; // 1-4
-  angle: number; // DOA angle in degrees
+  angle: number; // DOA angle in degrees (actual angle from device)
+  accuracy: number; // 0-100, percentage accuracy based on distance from quadrant center
 }
 
 export class DOAService {
@@ -43,24 +44,8 @@ export class DOAService {
   private static doaMonitoringInterval: NodeJS.Timeout | null = null;
   private static isMonitoring = false;
 
-  // Track active speech segments per channel
-  private static activeSegments: Map<
-    number,
-    {
-      start: number;
-      lastAngle: number;
-      lastUpdate: number;
-    }
-  > = new Map();
-
   // Recording start time
   private static recordingStartTime: number = 0;
-
-  // Audio processing parameters
-  private static readonly CHANNELS = 6;
-  private static readonly BYTES_PER_SAMPLE = 2; // 16-bit
-  private static readonly SPEECH_THRESHOLD = 500; // Amplitude threshold for speech detection
-  private static readonly SILENCE_DURATION_MS = 500; // Close segment after 500ms silence
 
   /**
    * Read DOA angle from ReSpeaker USB Mic Array
@@ -559,7 +544,6 @@ sys.exit(1)
     this.isMonitoring = true;
     this.doaReadings = [];
     this.doaSegments = [];
-    this.activeSegments.clear();
     this.recordingStartTime = recordingStartTime;
 
     logger.info(
@@ -585,7 +569,7 @@ sys.exit(1)
       );
     }
 
-    // Update DOA angle periodically
+    // Update DOA angle periodically and create segments
     this.doaMonitoringInterval = setInterval(async () => {
       const angle = await this.readDOAAngle();
       if (angle !== null) {
@@ -595,8 +579,26 @@ sys.exit(1)
           timestamp,
         });
 
-        // Update active segments with latest angle
-        this.updateActiveSegments(angle, timestamp);
+        // Calculate current window start time
+        const relativeTime = timestamp - this.recordingStartTime;
+        const windowStart =
+          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs;
+        const windowEnd = windowStart + samplingIntervalMs;
+
+        // Map angle to channel
+        const mappedChannel = this.mapAngleToChannel(angle);
+
+        // Calculate accuracy
+        const accuracy = this.calculateAccuracy(angle, mappedChannel);
+
+        // Create segment
+        this.doaSegments.push({
+          start: windowStart,
+          end: windowEnd,
+          channel: mappedChannel,
+          angle: angle, // Actual DOA angle from device
+          accuracy: accuracy,
+        });
 
         logger.debug(
           `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
@@ -610,152 +612,53 @@ sys.exit(1)
   }
 
   /**
-   * Process audio chunk to detect speech on channels 1-4
+   * Map DOA angle to channel using 90° quadrants
+   * Channel 1: 0° ≤ angle < 90°
+   * Channel 2: 90° ≤ angle < 180°
+   * Channel 3: 180° ≤ angle < 270°
+   * Channel 4: 270° ≤ angle < 360°
+   * Boundaries (0°, 90°, 180°, 270°) map to first channel of quadrant
    */
-  static processAudioChunk(audioBuffer: Buffer): void {
-    if (!this.isMonitoring) return;
+  private static mapAngleToChannel(angle: number): number {
+    // Normalize angle to 0-360 range
+    const normalizedAngle = ((angle % 360) + 360) % 360;
 
-    const currentTime = Date.now();
-    const relativeTime = currentTime - this.recordingStartTime;
+    // Map to channels using simple quadrants
+    // Boundaries (0°, 90°, 180°, 270°) map to first channel of quadrant
+    if (normalizedAngle >= 0 && normalizedAngle < 90) return 1;
+    if (normalizedAngle >= 90 && normalizedAngle < 180) return 2;
+    if (normalizedAngle >= 180 && normalizedAngle < 270) return 3;
+    if (normalizedAngle >= 270 && normalizedAngle < 360) return 4;
 
-    // Parse 6-channel audio buffer
-    // Format: interleaved samples [ch0_sample1, ch1_sample1, ch2_sample1, ch3_sample1, ch4_sample1, ch5_sample1, ch0_sample2, ...]
-    const samplesPerChannel =
-      audioBuffer.length / (this.CHANNELS * this.BYTES_PER_SAMPLE);
-
-    // Extract channels 1-4 (indices 1-4 in 0-indexed)
-    const channelData: number[][] = [[], [], [], []]; // For channels 1-4
-
-    for (let i = 0; i < samplesPerChannel; i++) {
-      for (let ch = 1; ch <= 4; ch++) {
-        const offset = (i * this.CHANNELS + ch) * this.BYTES_PER_SAMPLE;
-        if (offset + 1 < audioBuffer.length) {
-          const sample = audioBuffer.readInt16LE(offset);
-          channelData[ch - 1].push(Math.abs(sample));
-        }
-      }
-    }
-
-    // Detect speech on each channel
-    for (let ch = 1; ch <= 4; ch++) {
-      const channelIndex = ch - 1;
-      const samples = channelData[channelIndex];
-
-      if (samples.length === 0) continue;
-
-      // Calculate RMS (Root Mean Square) energy for speech detection
-      const sumSquares = samples.reduce(
-        (sum, sample) => sum + sample * sample,
-        0
-      );
-      const rms = Math.sqrt(sumSquares / samples.length);
-
-      const hasSpeech = rms > this.SPEECH_THRESHOLD;
-      const channelKey = ch;
-
-      if (hasSpeech) {
-        // Speech detected - start or continue segment
-        if (!this.activeSegments.has(channelKey)) {
-          // Start new segment
-          const currentAngle = this.getCurrentDOAAngle();
-          this.activeSegments.set(channelKey, {
-            start: relativeTime,
-            lastAngle: currentAngle,
-            lastUpdate: currentTime,
-          });
-          logger.debug(
-            `🎤 Speech detected on channel ${ch} at ${relativeTime}ms, DOA: ${currentAngle}°`
-          );
-          console.log(
-            `🎤 Speech detected on channel ${ch} at ${relativeTime}ms, DOA: ${currentAngle}°, Total readings: ${this.doaReadings.length}`
-          );
-        } else {
-          // Update existing segment
-          const segment = this.activeSegments.get(channelKey)!;
-          const currentAngle = this.getCurrentDOAAngle();
-          segment.lastAngle = currentAngle;
-          segment.lastUpdate = currentTime;
-        }
-      } else {
-        // No speech - check if we should close segment
-        if (this.activeSegments.has(channelKey)) {
-          const segment = this.activeSegments.get(channelKey)!;
-          const silenceDuration = currentTime - segment.lastUpdate;
-
-          if (silenceDuration >= this.SILENCE_DURATION_MS) {
-            // Close segment
-            this.closeSegment(channelKey, relativeTime);
-          }
-        }
-      }
-    }
+    // Fallback (shouldn't happen)
+    return 1;
   }
 
   /**
-   * Close a speech segment and add to segments array
+   * Calculate accuracy based on distance from quadrant center
+   * Returns 0-100 percentage: 100% at center, 0% at boundaries
    */
-  private static closeSegment(channel: number, endTime: number): void {
-    const segment = this.activeSegments.get(channel);
-    if (!segment) return;
+  private static calculateAccuracy(angle: number, channel: number): number {
+    // Normalize angle to 0-360 range
+    const normalizedAngle = ((angle % 360) + 360) % 360;
 
-    // Use the most recent angle, or calculate average angle during segment
-    let finalAngle = segment.lastAngle;
+    // Define quadrant centers
+    const centers: { [key: number]: number } = {
+      1: 45, // 0-90° quadrant center
+      2: 135, // 90-180° quadrant center
+      3: 225, // 180-270° quadrant center
+      4: 315, // 270-360° quadrant center
+    };
 
-    // If we have readings during this segment, use the most recent one
-    if (this.doaReadings.length > 0) {
-      const segmentStartTime = this.recordingStartTime + segment.start;
-      const segmentEndTime = this.recordingStartTime + endTime;
+    const center = centers[channel];
+    const maxDistance = 45; // Half of 90° quadrant width
+    const distance = Math.abs(normalizedAngle - center);
 
-      // Find readings during this segment
-      const readingsDuringSegment = this.doaReadings.filter(
-        (r) => r.timestamp >= segmentStartTime && r.timestamp <= segmentEndTime
-      );
+    // Calculate accuracy: 100% at center, 0% at boundaries
+    const accuracy = 100 * (1 - distance / maxDistance);
 
-      if (readingsDuringSegment.length > 0) {
-        // Use the most recent reading during the segment
-        finalAngle =
-          readingsDuringSegment[readingsDuringSegment.length - 1].angle;
-      } else {
-        // Use the most recent reading overall if no readings during segment
-        finalAngle = this.doaReadings[this.doaReadings.length - 1].angle;
-      }
-    }
-
-    this.doaSegments.push({
-      start: segment.start,
-      end: endTime,
-      channel: channel,
-      angle: finalAngle,
-    });
-
-    this.activeSegments.delete(channel);
-    logger.debug(
-      `🔇 Speech ended on channel ${channel} at ${endTime}ms, Final DOA: ${finalAngle}°`
-    );
-    console.log(
-      `🔇 Speech ended on channel ${channel} at ${endTime}ms, Final DOA: ${finalAngle}°`
-    );
-  }
-
-  /**
-   * Update active segments with latest DOA angle
-   */
-  private static updateActiveSegments(angle: number, timestamp: number): void {
-    for (const [, segment] of this.activeSegments.entries()) {
-      // Update angle if segment is still active
-      segment.lastAngle = angle;
-      segment.lastUpdate = timestamp;
-    }
-  }
-
-  /**
-   * Get current DOA angle (from most recent reading)
-   */
-  private static getCurrentDOAAngle(): number {
-    if (this.doaReadings.length === 0) {
-      return 0; // Default angle if no readings yet
-    }
-    return this.doaReadings[this.doaReadings.length - 1].angle;
+    // Clamp between 0 and 100
+    return Math.max(0, Math.min(100, accuracy));
   }
 
   /**
@@ -771,22 +674,13 @@ sys.exit(1)
 
     this.isMonitoring = false;
 
-    // If we have active segments, return segments and readings
-    if (this.activeSegments.size > 0 || this.doaSegments.length > 0) {
-      // Close all active segments
-      const currentTime = Date.now();
-      const relativeTime = currentTime - this.recordingStartTime;
-
-      for (const channel of this.activeSegments.keys()) {
-        this.closeSegment(channel, relativeTime);
-      }
-
+    // Segments are already created every 100ms, so just return existing segments
+    if (this.doaSegments.length > 0) {
       const segments = [...this.doaSegments];
       const readings = [...this.doaReadings];
 
       this.doaSegments = [];
       this.doaReadings = [];
-      this.activeSegments.clear();
 
       logger.info(
         `📡 DOA monitoring stopped. Collected ${segments.length} segments, ${readings.length} readings`
@@ -862,6 +756,7 @@ sys.exit(1)
         end: seg.end,
         channel: seg.channel,
         angle: seg.angle,
+        accuracy: seg.accuracy,
       })),
     };
 

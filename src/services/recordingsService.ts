@@ -15,6 +15,7 @@ export interface DOAMetadata {
     end: number; // milliseconds
     channel: number; // 1-4
     angle: number; // DOA angle
+    accuracy: number; // 0-100, percentage accuracy
   }>;
   doaReadings?: Array<{ angle: number; timestamp: number }>;
 }
