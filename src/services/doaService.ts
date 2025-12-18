@@ -7,8 +7,6 @@ import { formatDOASegments } from "../utils/helpers";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import * as path from "path";
-import * as fs from "fs";
 
 const execPromise = promisify(exec);
 
@@ -500,37 +498,6 @@ sys.exit(1)
   }
 
   /**
-   * Start monitoring DOA angle during recording
-   * Sampling interval is 500ms - but the actual sampling interval is determined by the samplingIntervalMs parameter "which is set to 100ms in the audioRecording.ts file"
-   */
-  // LOAI - FOR ME: commented out the old startDOAMonitoring method since we're using the new startDOAMonitoringWithChannels method
-  // static startDOAMonitoring(samplingIntervalMs: number = 500): void {
-  //   if (this.isMonitoring) {
-  //     logger.warn("⚠️ DOA monitoring is already active");
-  //     return;
-  //   }
-
-  //   this.isMonitoring = true;
-  //   this.doaReadings = [];
-  //   logger.info(
-  //     `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`
-  //   );
-
-  //   this.doaMonitoringInterval = setInterval(async () => {
-  //     const angle = await this.readDOAAngle();
-  //     if (angle !== null) {
-  //       this.doaReadings.push({
-  //         angle,
-  //         timestamp: Date.now(),
-  //       });
-  //       logger.debug(
-  //         `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
-  //       );
-  //     }
-  //   }, samplingIntervalMs);
-  // }
-
-  /**
    * Start monitoring DOA with channel-based speech detection
    */
   static async startDOAMonitoringWithChannels(
@@ -761,8 +728,8 @@ sys.exit(1)
       })),
     };
 
-    const jsonFilePath = path.join(recordingDir, `${recordingId}.json`);
-    fs.writeFileSync(jsonFilePath, JSON.stringify(jsonData, null, 2));
+    const jsonFilePath = join(recordingDir, `${recordingId}.json`);
+    writeFileSync(jsonFilePath, JSON.stringify(jsonData, null, 2));
 
     logger.info(`📄 Generated DOA JSON file: ${jsonFilePath}`);
     return jsonFilePath;
