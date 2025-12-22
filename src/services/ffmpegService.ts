@@ -24,7 +24,7 @@ export class ffmpegService {
         );
         return null;
       }
-      // Convert to MP3 using ffmpeg with noise reduction
+      // Convert to MP3 using ffmpeg
       return await new Promise<string | void>((resolve, reject) => {
         ffmpeg()
           .input(rawFile)
@@ -38,32 +38,16 @@ export class ffmpegService {
           ])
           .outputOptions([
             "-map_channel",
-            "0.0.0", // Map channel 0 (beamformed/processed channel - best for speech)
+            "0.0.0", // Map channel 0 from input stream 0
             "-ac",
             "1", // Output mono
             "-ar",
             "16000", // Maintain 16kHz sample rate
-            // Audio filters for noise reduction and background noise removal
-            "-af",
-            [
-              // High-pass filter: remove low-frequency noise (below 80Hz) - removes rumble, clicks
-              "highpass=f=80",
-              // Low-pass filter: remove high-frequency noise (above 8000Hz) - removes hiss, clicks
-              "lowpass=f=8000",
-              // Noise gate: remove silence and quiet background noise
-              // Threshold: -45dB (0.0056), ratio: 2.0, attack: 0.05s, release: 0.2s
-              "agate=threshold=0.0056:ratio=2.0:attack=0.05:release=0.2",
-              // Compressor: reduce dynamic range to minimize background noise
-              "acompressor=threshold=0.1:ratio=3:attack=0.05:release=0.2",
-              // Normalize audio levels
-              "loudnorm=I=-16:TP=-1.5:LRA=11",
-            ].join(","),
           ])
           .audioCodec("libmp3lame")
-          .audioBitrate(128) // Set bitrate for MP3
           .format("mp3")
           .on("end", async () => {
-            logger.info(`🎵 Converted to MP3 with noise reduction: ${getFileName(mp3File)}`);
+            logger.info(`🎵 Converted to MP3: ${getFileName(mp3File)}`);
             try {
               fs.unlinkSync(rawFile);
             } catch (unlinkErr) {
