@@ -45,11 +45,6 @@ export class DOAService {
   // Recording start time
   private static recordingStartTime: number = 0;
 
-  // Throttling for data event-based DOA readings
-  private static lastDOAReadingTime: number = 0;
-  private static pendingDOARead: boolean = false;
-  private static samplingIntervalMs: number = 100;
-
   /**
    * Read DOA angle from ReSpeaker USB Mic Array
    * Uses Python script (more reliable) with Node.js USB as fallback
@@ -503,16 +498,16 @@ sys.exit(1)
   }
 
   /**
-   * Initialize DOA monitoring (called once, isolated from data events)
-   * This prevents multiple initializations
+   * Start monitoring DOA with channel-based speech detection
+   * Uses setInterval for clean, predictable timing
    */
-  static async initializeDOAMonitoring(
+  static async startDOAMonitoringWithChannels(
     recordingStartTime: number,
     samplingIntervalMs: number = 100
   ): Promise<void> {
     // Prevent multiple initializations
     if (this.isMonitoring) {
-      logger.warn("⚠️ DOA monitoring is already initialized");
+      logger.warn("⚠️ DOA monitoring is already active");
       return;
     }
 
@@ -520,19 +515,15 @@ sys.exit(1)
     this.doaReadings = [];
     this.doaSegments = [];
     this.recordingStartTime = recordingStartTime;
-    this.samplingIntervalMs = samplingIntervalMs;
-    this.lastDOAReadingTime = 0;
-    this.pendingDOARead = false;
 
     logger.info(
-      `📡 Initialized DOA monitoring (event-based, throttled to ${samplingIntervalMs}ms)`
+      `📡 Starting DOA monitoring with channel detection (sampling every ${samplingIntervalMs}ms)`
     );
 
     // Try to read DOA immediately to test if device is available
     const initialAngle = await this.readDOAAngle();
     if (initialAngle !== null) {
       const initialTimestamp = Date.now();
-      this.lastDOAReadingTime = initialTimestamp;
       this.doaReadings.push({
         angle: initialAngle,
         timestamp: initialTimestamp,
@@ -569,48 +560,25 @@ sys.exit(1)
         `⚠️ Initial DOA reading failed - device may not be available`
       );
     }
-  }
 
-  /**
-   * Process DOA reading triggered by data event (throttled)
-   * This is called from the data event handler, but throttled to prevent CPU overload
-   */
-  static async processDOAReading(): Promise<void> {
-    // Prevent multiple concurrent reads
-    if (this.pendingDOARead) {
-      return;
-    }
-
-    // Throttle: only read if enough time has passed
-    const now = Date.now();
-    const timeSinceLastRead = now - this.lastDOAReadingTime;
-
-    if (timeSinceLastRead < this.samplingIntervalMs) {
-      return; // Too soon, skip this reading
-    }
-
-    // Mark as pending to prevent concurrent reads
-    this.pendingDOARead = true;
-
-    try {
+    // Update DOA angle periodically and create segments
+    this.doaMonitoringInterval = setInterval(async () => {
       const angle = await this.readDOAAngle();
       if (angle !== null) {
         const timestamp = Date.now();
-        this.lastDOAReadingTime = timestamp;
-
         this.doaReadings.push({
           angle,
           timestamp,
         });
 
         // Calculate current window start time
+        // Ensure segments always start from 0ms (handle any timing edge cases)
         const relativeTime = timestamp - this.recordingStartTime;
         const windowStart = Math.max(
           0,
-          Math.floor(relativeTime / this.samplingIntervalMs) *
-          this.samplingIntervalMs
+          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs
         );
-        const windowEnd = windowStart + this.samplingIntervalMs;
+        const windowEnd = windowStart + samplingIntervalMs;
 
         // Map angle to channel
         const mappedChannel = this.mapAngleToChannel(angle);
@@ -623,115 +591,7 @@ sys.exit(1)
           start: windowStart,
           end: windowEnd,
           channel: mappedChannel,
-          angle: angle,
-          accuracy: accuracy,
-        });
-
-        logger.debug(
-          `📡 DOA reading: ${angle}° at ${new Date().toISOString()}`
-        );
-        console.log(`📡 DOA reading: ${angle}°`);
-      } else {
-        logger.warn(`⚠️ DOA reading failed - returned null`);
-        console.log(`⚠️ DOA reading failed - returned null`);
-      }
-    } catch (error: any) {
-      logger.error(`❌ Error processing DOA reading: ${error?.message || error}`);
-    } finally {
-      // Always clear pending flag
-      this.pendingDOARead = false;
-    }
-  }
-
-  /**
-   * Start monitoring DOA with channel-based speech detection
-   * @deprecated Use initializeDOAMonitoring() + processDOAReading() for event-based approach
-   */
-  static async startDOAMonitoringWithChannels(
-    recordingStartTime: number,
-    samplingIntervalMs: number = 100
-  ): Promise<void> {
-    // For backward compatibility, use interval-based approach
-    if (this.isMonitoring) {
-      logger.warn("⚠️ DOA monitoring is already active");
-      return;
-    }
-
-    this.isMonitoring = true;
-    this.doaReadings = [];
-    this.doaSegments = [];
-    this.recordingStartTime = recordingStartTime;
-
-    logger.info(
-      `📡 Starting DOA monitoring with channel detection (interval-based, sampling every ${samplingIntervalMs}ms)`
-    );
-
-    // Try to read DOA immediately to test if device is available
-    const initialAngle = await this.readDOAAngle();
-    if (initialAngle !== null) {
-      const initialTimestamp = Date.now();
-      this.doaReadings.push({
-        angle: initialAngle,
-        timestamp: initialTimestamp,
-      });
-      console.log(`📡 Initial DOA reading: ${initialAngle}°`);
-      logger.info(`📡 Initial DOA reading: ${initialAngle}°`);
-
-      // Create first segment starting from 0ms
-      const initialRelativeTime = initialTimestamp - this.recordingStartTime;
-      const initialWindowStart = Math.max(
-        0,
-        Math.floor(initialRelativeTime / samplingIntervalMs) *
-        samplingIntervalMs
-      );
-      const initialWindowEnd = initialWindowStart + samplingIntervalMs;
-      const initialMappedChannel = this.mapAngleToChannel(initialAngle);
-      const initialAccuracy = this.calculateAccuracy(
-        initialAngle,
-        initialMappedChannel
-      );
-
-      this.doaSegments.push({
-        start: initialWindowStart,
-        end: initialWindowEnd,
-        channel: initialMappedChannel,
-        angle: initialAngle,
-        accuracy: initialAccuracy,
-      });
-    } else {
-      console.log(
-        `⚠️ Initial DOA reading failed - device may not be available`
-      );
-      logger.warn(
-        `⚠️ Initial DOA reading failed - device may not be available`
-      );
-    }
-
-    // Update DOA angle periodically and create segments
-    this.doaMonitoringInterval = setInterval(async () => {
-      const angle = await this.readDOAAngle();
-      if (angle !== null) {
-        const timestamp = Date.now();
-        this.doaReadings.push({
-          angle,
-          timestamp,
-        });
-
-        const relativeTime = timestamp - this.recordingStartTime;
-        const windowStart = Math.max(
-          0,
-          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs
-        );
-        const windowEnd = windowStart + samplingIntervalMs;
-
-        const mappedChannel = this.mapAngleToChannel(angle);
-        const accuracy = this.calculateAccuracy(angle, mappedChannel);
-
-        this.doaSegments.push({
-          start: windowStart,
-          end: windowEnd,
-          channel: mappedChannel,
-          angle: angle,
+          angle: angle, // Actual DOA angle from device
           accuracy: accuracy,
         });
 

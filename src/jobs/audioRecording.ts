@@ -92,6 +92,8 @@ export const startRecording = async () => {
 
   micInputStream.pipe(outputFileStream);
 
+  let doaMonitoringStarted = false; // Track if DOA has started
+
   micInputStream.on("startComplete", async () => {
     logger.info(`🎙️ Recording started: ${fileName}`);
   });
@@ -100,34 +102,19 @@ export const startRecording = async () => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  // Initialize DOA monitoring once (isolated from data events)
-  // This prevents multiple initializations even if data event fires multiple times
-  let doaMonitoringInitialized = false;
-  const actualRecordingStartTime = Date.now();
-
-  // Initialize DOA monitoring immediately when recording starts
-  // This is isolated from the data event to prevent multiple initializations
-  (async () => {
-    if (!doaMonitoringInitialized) {
-      doaMonitoringInitialized = true;
-      await DOAService.initializeDOAMonitoring(actualRecordingStartTime, 100);
-      logger.info(
-        `📡 DOA monitoring initialized at recording start: ${actualRecordingStartTime}`
-      );
-    }
-  })();
-
   micInputStream.on("data", async function () {
     micLastActive = Date.now();
     isMicActive = true;
 
-    // Process DOA reading on data event (throttled internally to prevent CPU overload)
-    // This is non-blocking and throttled to ~100ms intervals
-    if (doaMonitoringInitialized) {
-      // Fire and forget - throttling is handled inside processDOAReading()
-      DOAService.processDOAReading().catch((error) => {
-        logger.error(`⚠️ Error in DOA reading: ${error?.message || error}`);
-      });
+    // Start DOA monitoring on first data event (actual recording start)
+    // Guard prevents multiple initializations
+    if (!doaMonitoringStarted) {
+      doaMonitoringStarted = true;
+      const actualRecordingStartTime = Date.now();
+      await DOAService.startDOAMonitoringWithChannels(actualRecordingStartTime, 100);
+      logger.info(
+        `📡 DOA monitoring started at actual recording start: ${actualRecordingStartTime}`
+      );
     }
   });
 
