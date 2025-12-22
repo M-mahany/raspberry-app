@@ -428,6 +428,7 @@ sys.exit(1)`;
         start: seg.start / 1000, // Convert to seconds
         end: seg.end / 1000, // Convert to seconds
         speaker: `Channel ${seg.channel}`,
+        accuracy: seg.accuracy,
       })),
       metadata: {
         totalSegments: segments.length,
