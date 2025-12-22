@@ -41,7 +41,7 @@ export let isMicActive = false;
 // MIC AUDIO OPTIONS
 const micOptions: MicOptions = {
   rate: "16000",
-  channels: "1",
+  channels: "6",
   bitwidth: "16",
   encoding: "signed-integer",
   fileType: "raw",
@@ -125,18 +125,7 @@ export const startRecording = async () => {
     // This ensures JSON is saved even if stopRecording() is called before file stream finishes
     // Note: outputFileStream.once("finish") is the primary handler for normal completion
     if (currentRawFile === rawFile) {
-      const doaSegments = DOAService.stopDOAMonitoring();
-      if (doaSegments.length > 0) {
-        const recordingId = getFileName(rawFile).split(".")[0];
-        DOAService.generateDOAJsonFile(
-          doaSegments,
-          recordingId,
-          RECORDING_DIR
-        );
-        logger.info(
-          `📄 Saved DOA JSON file from stopComplete event: ${getFileName(rawFile)}`
-        );
-      }
+      await stopAndGenerateDOAJson(rawFile);
     }
   });
 
@@ -271,7 +260,7 @@ const runOnStart = async () => {
   startRecording(); // Start recording first
   scheduleNextRestart();
   await handleInterruptedFiles(); // Run it immediately once
-  SystemService.checkForUpdates(); // check for updates after all interrupted file handled to avoid interruption
+  // SystemService.checkForUpdates(); // check for updates after all interrupted file handled to avoid interruption
 };
 
 runOnStart();
