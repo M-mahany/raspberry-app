@@ -107,7 +107,6 @@ export const startRecording = async () => {
 
     RecordingService.convertAndUploadToServer(
       rawFile,
-      recordingFiles,
       doaJsonFilePath
     );
 
@@ -196,7 +195,6 @@ const handleInterruptedFiles = async () => {
 
       await RecordingService.convertAndUploadToServer(
         rawFilePath,
-        undefined,
         doaJsonFilePath
       );
     });

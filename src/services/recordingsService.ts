@@ -111,7 +111,6 @@ export class RecordingService {
 
   static async convertAndUploadToServer(
     rawFile: string,
-    currentRecordingFileSet?: Set<string>,
     doaJsonFilePath?: string
   ) {
     try {
@@ -119,9 +118,6 @@ export class RecordingService {
       if (mp3File) {
         logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
         await this.uploadRecording(mp3File, doaJsonFilePath);
-      }
-      if (currentRecordingFileSet) {
-        currentRecordingFileSet?.delete(getFileName(rawFile));
       }
     } catch (error) {
       logger.error(
