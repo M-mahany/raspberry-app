@@ -25,6 +25,11 @@ export class ffmpegService {
         return null;
       }
       // Convert to MP3 using ffmpeg
+      // Reference: https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/
+      // 6-channel firmware layout:
+      // - Channel 0: Processed audio for ASR (beamformed, noise-suppressed) ← USING THIS (best for transcription)
+      // - Channels 1-4: 4 microphones' raw data (raw directional mics)
+      // - Channel 5: Playback/reference channel
       return await new Promise<string | void>((resolve, reject) => {
         ffmpeg()
           .input(rawFile)
@@ -34,11 +39,11 @@ export class ffmpegService {
             "-ar",
             "16000", // Sample rate 16kHz
             "-ac",
-            "6", // 6 input channels
+            "6", // 6 input channels (ReSpeaker USB Mic Array)
           ])
           .outputOptions([
             "-map_channel",
-            "0.0.0", // Map channel 0 from input stream 0
+            "0.0.0", // Map channel 0 (processed audio - beamformed, noise-suppressed, optimized for ASR)
             "-ac",
             "1", // Output mono
             "-ar",

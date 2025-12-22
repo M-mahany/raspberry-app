@@ -18,6 +18,20 @@ const CONTROL_REQUEST = 0x00;
 const CONTROL_VALUE = 0x0200; // Parameter ID for DOAANGLE
 const CONTROL_INDEX = 0x0000;
 
+// Channel configuration for 6-channel ReSpeaker USB Mic Array
+// Reference: https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/
+// 
+// 6-channel firmware layout:
+// - Channel 0: Processed audio for ASR (beamformed, noise-suppressed) - EXCLUDED (processed, not raw)
+// - Channels 1-4: 4 microphones' raw data (4 directional mics) - USED FOR DOA
+// - Channel 5: Playback/reference channel - EXCLUDED (not a microphone)
+//
+// We use channels 1-4 (the 4 raw directional microphones) and exclude:
+// - Channel 0: Processed audio (may include background/noise processing)
+// - Channel 5: Playback/reference channel (not a microphone input)
+const DIRECTIONAL_CHANNELS = [1, 2, 3, 4]; // Channels 1-4: 4 raw directional microphones (0-based indexing)
+const EXCLUDED_CHANNELS = [0, 5]; // Channel 0: processed audio, Channel 5: playback/reference
+
 export interface DOASegment {
   start: number; // milliseconds
   end: number; // milliseconds
@@ -319,13 +333,26 @@ sys.exit(1)`;
 
   /**
    * Map DOA angle to channel using 90° quadrants
+   * Maps to 4 directional channels (1-4 in hardware, represented as 1-4 for output)
+   * 
+   * According to ReSpeaker USB Mic Array documentation:
+   * - Channels 1-4: 4 raw directional microphones (USED)
+   * - Channel 0: Processed audio (EXCLUDED - may include background/noise)
+   * - Channel 5: Playback/reference (EXCLUDED - not a microphone)
+   * 
+   * Channel mapping (0-based hardware → 1-based output):
+   * - Hardware channel 1 → Output channel 1 (0-90° quadrant)
+   * - Hardware channel 2 → Output channel 2 (90-180° quadrant)
+   * - Hardware channel 3 → Output channel 3 (180-270° quadrant)
+   * - Hardware channel 4 → Output channel 4 (270-360° quadrant)
    */
   private static mapAngleToChannel(angle: number): number {
     const normalizedAngle = ((angle % 360) + 360) % 360;
-    if (normalizedAngle >= 0 && normalizedAngle < 90) return 1;
-    if (normalizedAngle >= 90 && normalizedAngle < 180) return 2;
-    if (normalizedAngle >= 180 && normalizedAngle < 270) return 3;
-    if (normalizedAngle >= 270 && normalizedAngle < 360) return 4;
+    // Map to directional channels 1-4 (hardware channels 1-4, raw microphone data)
+    if (normalizedAngle >= 0 && normalizedAngle < 90) return 1;   // Hardware channel 1 (raw mic 1)
+    if (normalizedAngle >= 90 && normalizedAngle < 180) return 2;  // Hardware channel 2 (raw mic 2)
+    if (normalizedAngle >= 180 && normalizedAngle < 270) return 3; // Hardware channel 3 (raw mic 3)
+    if (normalizedAngle >= 270 && normalizedAngle < 360) return 4; // Hardware channel 4 (raw mic 4)
     return 1;
   }
 
@@ -410,6 +437,7 @@ sys.exit(1)`;
 
   /**
    * Generate DOA JSON file in pyannote-compatible format
+   * Returns all angles (not just channel mapping) and excludes noise/background channels
    */
   static generateDOAJsonFile(
     segments: DOASegment[],
@@ -419,7 +447,8 @@ sys.exit(1)`;
     // Merge consecutive segments
     const merged = this.mergeConsecutiveSegments(segments);
 
-    // Convert to pyannote-compatible format
+    // Convert to pyannote-compatible format with actual angles
+    // Using 4 directional channels (0-3) excluding reference/noise channels (4-5)
     const jsonData = {
       recordingId,
       timestamp: new Date().toISOString(),
@@ -427,13 +456,20 @@ sys.exit(1)`;
       segments: merged.map((seg) => ({
         start: seg.start / 1000, // Convert to seconds
         end: seg.end / 1000, // Convert to seconds
-        speaker: `Channel ${seg.channel}`,
+        speaker: `Angle_${Math.round(seg.angle)}°`, // Use actual angle instead of channel number
+        angle: Math.round(seg.angle * 10) / 10, // Actual DOA angle in degrees
+        channel: seg.channel, // Channel mapping (1-4) for reference
         accuracy: seg.accuracy,
       })),
       metadata: {
         totalSegments: segments.length,
         mergedSegments: merged.length,
         source: "hardware-doa",
+        channelsUsed: `Channels ${DIRECTIONAL_CHANNELS.join(", ")} (4 raw directional microphones)`,
+        channelsExcluded: `Channel ${EXCLUDED_CHANNELS[0]}: processed audio, Channel ${EXCLUDED_CHANNELS[1]}: playback/reference`,
+        totalChannels: 6,
+        activeChannels: 4,
+        reference: "https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/",
       },
     };
 
