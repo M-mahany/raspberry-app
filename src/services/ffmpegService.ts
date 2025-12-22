@@ -28,7 +28,24 @@ export class ffmpegService {
       return await new Promise<string | void>((resolve, reject) => {
         ffmpeg()
           .input(rawFile)
+          .inputOptions([
+            "-f",
+            "s16le", // Signed 16-bit little-endian
+            "-ar",
+            "16000", // Sample rate 16kHz
+            "-ac",
+            "6", // 6 input channels
+          ])
+          .outputOptions([
+            "-map_channel",
+            "0.0.0", // Map channel 0 from input stream 0
+            "-ac",
+            "1", // Output mono
+            "-ar",
+            "16000", // Maintain 16kHz sample rate
+          ])
           .audioCodec("libmp3lame")
+          .audioBitrate(128) // Set bitrate for MP3
           .format("mp3")
           .on("end", async () => {
             logger.info(`🎵 Converted to MP3: ${getFileName(mp3File)}`);
