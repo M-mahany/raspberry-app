@@ -16,6 +16,7 @@ export class RecordingService {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
+      formData.append("hasDoa", "true"); // Indicates this is the new version with DOA data
 
       // Add DOA JSON file (required)
       if (!fs.existsSync(doaJsonFilePath)) {
