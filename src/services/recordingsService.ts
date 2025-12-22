@@ -8,11 +8,23 @@ import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
 export class RecordingService {
-  static async uploadRecording(filePath: string): Promise<void> {
+  static async uploadRecording(
+    filePath: string,
+    doaJsonFilePath?: string
+  ): Promise<void> {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
+
+      // Add DOA JSON file if it exists
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
+        logger.info(
+          `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`
+        );
+      }
+
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
           ...formData.getHeaders(),
@@ -20,13 +32,28 @@ export class RecordingService {
       });
 
       logger.info(
-        `✅ Uploaded ${getFileName(filePath)} successfully to the server:`,
+        `✅ Uploaded ${getFileName(filePath)} successfully to the server`
       );
+
+      // Delete audio file after successful upload
       fs.unlink(filePath, (err) => {
         if (err) {
           logger.error(`🚨 Error deleting file after upload: ${err}`);
         }
       });
+
+      // Delete JSON file after successful upload
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        fs.unlink(doaJsonFilePath, (err) => {
+          if (err) {
+            logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+          } else {
+            logger.info(
+              `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`
+            );
+          }
+        });
+      }
     } catch (error: any) {
       if (
         isAxiosError(error) &&
@@ -36,14 +63,23 @@ export class RecordingService {
       ) {
         fs.unlink(filePath, (err) => {
           logger.error(
-            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
+            `🚨File: ${getFileName(filePath)}, already uploaded to the server`
           );
           if (err) {
             logger.error(
-              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
+              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`
             );
           }
         });
+
+        // Delete JSON file if audio was already uploaded
+        if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+          fs.unlink(doaJsonFilePath, (err) => {
+            if (err) {
+              logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+            }
+          });
+        }
       } else {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
@@ -55,31 +91,52 @@ export class RecordingService {
           fs.unlink(filePath, (err) => {
             if (err) {
               logger.error(
-                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
+                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`
               );
             }
           });
+
+          // Delete JSON file if audio file is invalid
+          if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+            fs.unlink(doaJsonFilePath, (err) => {
+              if (err) {
+                logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+              }
+            });
+          }
         }
       }
     }
   }
+
   static async convertAndUploadToServer(
     rawFile: string,
     currentRecordingFileSet?: Set<string>,
+    doaJsonFilePath?: string
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
       if (mp3File) {
         logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
-        await this.uploadRecording(mp3File);
+        await this.uploadRecording(mp3File, doaJsonFilePath);
       }
       if (currentRecordingFileSet) {
         currentRecordingFileSet?.delete(getFileName(rawFile));
       }
     } catch (error) {
       logger.error(
-        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`
       );
+
+      // Clean up JSON file if conversion/upload fails
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+        try {
+          fs.unlinkSync(doaJsonFilePath);
+          logger.warn(`⚠️ Deleted DOA JSON file due to conversion error`);
+        } catch (err) {
+          logger.warn(`⚠️ Could not delete DOA JSON file: ${err}`);
+        }
+      }
     }
   }
   static async killExistingRecordings() {
@@ -125,8 +182,7 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${
-            error.message || error
+          `🚨 Error checking for existing arecord processes: ${error.message || error
           }`,
         );
       }

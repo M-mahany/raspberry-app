@@ -9,6 +9,7 @@ import { SystemService } from "../services/systemService";
 import dayjs from "dayjs";
 import { WriteStream } from "fs";
 import { flushQueueLoop } from "../services/notificationService";
+import { DOAService } from "../services/doaService";
 
 dotenv.config();
 
@@ -65,8 +66,9 @@ export const startRecording = async () => {
   micInputStream = micInstance.getAudioStream();
 
   recordingSession = true;
+  const recordingStartTime = Date.now();
 
-  const fileName = `${Date.now()}.raw`;
+  const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
 
@@ -76,6 +78,8 @@ export const startRecording = async () => {
 
   micInputStream.pipe(outputFileStream);
 
+  let doaMonitoringStarted = false;
+
   micInputStream.on("startComplete", () => {
     logger.info(`🎙️ Recording started: ${fileName}`);
   });
@@ -84,14 +88,39 @@ export const startRecording = async () => {
     logger.error(`⚠️ Mic error: ${err}`);
   });
 
-  micInputStream.on("data", function () {
+  micInputStream.on("data", async function () {
     micLastActive = Date.now();
     isMicActive = true;
+
+    // Start DOA monitoring on first data event
+    if (!doaMonitoringStarted) {
+      doaMonitoringStarted = true;
+      await DOAService.startDOAMonitoring(recordingStartTime, 100);
+    }
   });
 
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
-    RecordingService.convertAndUploadToServer(rawFile, recordingFiles);
+
+    // Stop DOA monitoring and get segments
+    const doaSegments = DOAService.stopDOAMonitoring();
+    const recordingId = getFileName(rawFile).split(".")[0];
+    let doaJsonFilePath: string | undefined;
+
+    // Generate DOA JSON file if segments exist
+    if (doaSegments.length > 0) {
+      doaJsonFilePath = DOAService.generateDOAJsonFile(
+        doaSegments,
+        recordingId,
+        RECORDING_DIR
+      );
+    }
+
+    RecordingService.convertAndUploadToServer(
+      rawFile,
+      recordingFiles,
+      doaJsonFilePath
+    );
   });
 
   micInputStream.on("stopComplete", async () => {
@@ -105,6 +134,8 @@ export const startRecording = async () => {
 // Stops the current recording gracefully
 export const stopRecording = async () => {
   if (micInstance) {
+    // Stop DOA monitoring if active
+    DOAService.stopDOAMonitoring();
     micInstance.stop();
     outputFileStream?.close();
     micInputStream?.removeAllListeners(); // Prevent memory leaks
@@ -142,10 +173,23 @@ const handleInterruptedFiles = async () => {
 
     const conversionPromises = filteredRawFiles.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+
       logger.info(
-        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
+        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`
       );
-      await RecordingService.convertAndUploadToServer(rawFilePath);
+
+      // Check if DOA JSON file exists for interrupted recording
+      const doaJsonFilePath = fs.existsSync(jsonFilePath)
+        ? jsonFilePath
+        : undefined;
+
+      await RecordingService.convertAndUploadToServer(
+        rawFilePath,
+        undefined,
+        doaJsonFilePath
+      );
     });
 
     if (filteredRawFiles?.length) {
