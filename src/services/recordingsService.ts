@@ -10,20 +10,21 @@ import { execSync } from "child_process";
 export class RecordingService {
   static async uploadRecording(
     filePath: string,
-    doaJsonFilePath?: string
+    doaJsonFilePath: string
   ): Promise<void> {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
 
-      // Add DOA JSON file if it exists
-      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
-        formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
-        logger.info(
-          `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`
-        );
+      // Add DOA JSON file (required)
+      if (!fs.existsSync(doaJsonFilePath)) {
+        throw new Error(`DOA JSON file not found: ${doaJsonFilePath}`);
       }
+      formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
+      logger.info(
+        `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`
+      );
 
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
@@ -43,17 +44,15 @@ export class RecordingService {
       });
 
       // Delete JSON file after successful upload
-      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
-        fs.unlink(doaJsonFilePath, (err) => {
-          if (err) {
-            logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-          } else {
-            logger.info(
-              `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`
-            );
-          }
-        });
-      }
+      fs.unlink(doaJsonFilePath, (err) => {
+        if (err) {
+          logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+        } else {
+          logger.info(
+            `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`
+          );
+        }
+      });
     } catch (error: any) {
       if (
         isAxiosError(error) &&
@@ -73,13 +72,11 @@ export class RecordingService {
         });
 
         // Delete JSON file if audio was already uploaded
-        if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
-          fs.unlink(doaJsonFilePath, (err) => {
-            if (err) {
-              logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-            }
-          });
-        }
+        fs.unlink(doaJsonFilePath, (err) => {
+          if (err) {
+            logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+          }
+        });
       } else {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
@@ -97,13 +94,11 @@ export class RecordingService {
           });
 
           // Delete JSON file if audio file is invalid
-          if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
-            fs.unlink(doaJsonFilePath, (err) => {
-              if (err) {
-                logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-              }
-            });
-          }
+          fs.unlink(doaJsonFilePath, (err) => {
+            if (err) {
+              logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
+            }
+          });
         }
       }
     }
@@ -111,7 +106,7 @@ export class RecordingService {
 
   static async convertAndUploadToServer(
     rawFile: string,
-    doaJsonFilePath?: string
+    doaJsonFilePath: string
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
@@ -125,7 +120,7 @@ export class RecordingService {
       );
 
       // Clean up JSON file if conversion/upload fails
-      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
+      if (fs.existsSync(doaJsonFilePath)) {
         try {
           fs.unlinkSync(doaJsonFilePath);
           logger.warn(`⚠️ Deleted DOA JSON file due to conversion error`);

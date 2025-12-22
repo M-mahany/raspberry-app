@@ -105,6 +105,13 @@ export const startRecording = async () => {
     // Stop DOA monitoring and generate JSON file (normal completion)
     const doaJsonFilePath = await stopAndGenerateDOAJson(rawFile);
 
+    if (!doaJsonFilePath) {
+      logger.error(
+        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}`
+      );
+      return;
+    }
+
     RecordingService.convertAndUploadToServer(
       rawFile,
       doaJsonFilePath
@@ -179,7 +186,25 @@ const handleInterruptedFiles = async () => {
       return path.extname(file) === ".mp3" && !recordingFiles.has(rawFileName);
     });
 
-    const conversionPromises = filteredRawFiles.map(async (file) => {
+    // Filter out raw files that don't have corresponding JSON files
+    const rawFilesWithJson = filteredRawFiles.filter((file) => {
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+      return fs.existsSync(jsonFilePath);
+    });
+
+    // Log files missing JSON
+    filteredRawFiles.forEach((file) => {
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+      if (!fs.existsSync(jsonFilePath)) {
+        logger.error(
+          `❌ DOA JSON file not found for interrupted recording: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`
+        );
+      }
+    });
+
+    const conversionPromises = rawFilesWithJson.map(async (file) => {
       const rawFilePath = path.join(RECORDING_DIR, file);
       const recordingId = path.basename(file, ".raw");
       const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
@@ -188,14 +213,9 @@ const handleInterruptedFiles = async () => {
         `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`
       );
 
-      // Check if DOA JSON file exists for interrupted recording
-      const doaJsonFilePath = fs.existsSync(jsonFilePath)
-        ? jsonFilePath
-        : undefined;
-
       await RecordingService.convertAndUploadToServer(
         rawFilePath,
-        doaJsonFilePath
+        jsonFilePath
       );
     });
 
@@ -209,8 +229,19 @@ const handleInterruptedFiles = async () => {
           `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
         );
         const mp3FilePath = path.join(RECORDING_DIR, file);
+        const recordingId = path.basename(file, ".mp3");
+        const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+
+        // Check if DOA JSON file exists for interrupted MP3 recording
+        if (!fs.existsSync(jsonFilePath)) {
+          logger.error(
+            `❌ DOA JSON file not found for interrupted MP3 file: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`
+          );
+          continue;
+        }
+
         try {
-          await RecordingService.uploadRecording(mp3FilePath);
+          await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
         } catch (error: any) {
           logger.error(
             `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`,
