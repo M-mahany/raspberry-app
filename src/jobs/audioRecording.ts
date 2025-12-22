@@ -27,6 +27,7 @@ const recordingFiles = new Set<string>(); // Stores active recordings
 let micInstance: MicInstance;
 let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
+let currentRawFile: string | null = null; // Track current recording file
 
 let recordingSession = false;
 let restartTimer: NodeJS.Timeout | null = null;
@@ -71,6 +72,7 @@ export const startRecording = async () => {
   const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
+  currentRawFile = rawFile; // Store current file path
 
   outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -102,40 +104,68 @@ export const startRecording = async () => {
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
 
-    // Stop DOA monitoring and get segments
-    const doaSegments = DOAService.stopDOAMonitoring();
-    const recordingId = getFileName(rawFile).split(".")[0];
-    let doaJsonFilePath: string | undefined;
-
-    // Generate DOA JSON file if segments exist
-    if (doaSegments.length > 0) {
-      doaJsonFilePath = DOAService.generateDOAJsonFile(
-        doaSegments,
-        recordingId,
-        RECORDING_DIR
-      );
-    }
+    // Stop DOA monitoring and generate JSON file (normal completion)
+    const doaJsonFilePath = await stopAndGenerateDOAJson(rawFile);
 
     RecordingService.convertAndUploadToServer(
       rawFile,
       recordingFiles,
       doaJsonFilePath
     );
+
+    currentRawFile = null; // Clear current file reference after processing
   });
 
   micInputStream.on("stopComplete", async () => {
     recordingSession = false;
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
+
+    // Generate JSON file when mic stops (for manual stops/app shutdown)
+    // Only if file stream hasn't finished yet (currentRawFile still points to this file)
+    // This ensures JSON is saved even if stopRecording() is called before file stream finishes
+    // Note: outputFileStream.once("finish") is the primary handler for normal completion
+    if (currentRawFile === rawFile) {
+      const doaSegments = DOAService.stopDOAMonitoring();
+      if (doaSegments.length > 0) {
+        const recordingId = getFileName(rawFile).split(".")[0];
+        DOAService.generateDOAJsonFile(
+          doaSegments,
+          recordingId,
+          RECORDING_DIR
+        );
+        logger.info(
+          `📄 Saved DOA JSON file from stopComplete event: ${getFileName(rawFile)}`
+        );
+      }
+    }
   });
 
   micInstance.start();
 };
 
+
+const stopAndGenerateDOAJson = async (rawFile: string) => {
+  // Stop DOA monitoring and get segments
+  const doaSegments = DOAService.stopDOAMonitoring();
+  const recordingId = getFileName(rawFile).split(".")[0];
+  let doaJsonFilePath: string | undefined;
+
+  // Generate DOA JSON file if segments exist
+  if (doaSegments.length > 0) {
+    doaJsonFilePath = DOAService.generateDOAJsonFile(
+      doaSegments,
+      recordingId,
+      RECORDING_DIR
+    );
+  }
+
+  return doaJsonFilePath;
+};
+
 // Stops the current recording gracefully
 export const stopRecording = async () => {
   if (micInstance) {
-    // Stop DOA monitoring if active
-    DOAService.stopDOAMonitoring();
+    // Stop mic - this will trigger stopComplete event which handles DOA JSON generation
     micInstance.stop();
     outputFileStream?.close();
     micInputStream?.removeAllListeners(); // Prevent memory leaks
