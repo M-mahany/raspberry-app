@@ -31,6 +31,8 @@ export class DOAService {
   private static doaMonitoringInterval: NodeJS.Timeout | null = null;
   private static isMonitoring = false;
   private static recordingStartTime: number = 0;
+  private static recentAngles: number[] = []; // Buffer for smoothing
+  private static readonly SMOOTHING_WINDOW_SIZE = 5; // Number of readings to average
 
   /**
    * Read DOA angle from ReSpeaker USB Mic Array
@@ -214,12 +216,14 @@ sys.exit(1)`;
     this.isMonitoring = true;
     this.doaSegments = [];
     this.recordingStartTime = recordingStartTime;
+    this.recentAngles = []; // Reset smoothing buffer
 
     logger.info(`📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`);
 
     // Initial reading
     const initialAngle = await this.readDOAAngle();
     if (initialAngle !== null) {
+      const smoothedAngle = this.smoothAngle(initialAngle);
       const initialTimestamp = Date.now();
       const initialRelativeTime = initialTimestamp - this.recordingStartTime;
       const initialWindowStart = Math.max(
@@ -227,14 +231,14 @@ sys.exit(1)`;
         Math.floor(initialRelativeTime / samplingIntervalMs) * samplingIntervalMs
       );
       const initialWindowEnd = initialWindowStart + samplingIntervalMs;
-      const initialMappedChannel = this.mapAngleToChannel(initialAngle);
-      const initialAccuracy = this.calculateAccuracy(initialAngle, initialMappedChannel);
+      const initialMappedChannel = this.mapAngleToChannel(smoothedAngle);
+      const initialAccuracy = this.calculateAccuracy(smoothedAngle, initialMappedChannel);
 
       this.doaSegments.push({
         start: initialWindowStart,
         end: initialWindowEnd,
         channel: initialMappedChannel,
-        angle: initialAngle,
+        angle: smoothedAngle,
         accuracy: initialAccuracy,
       });
     }
@@ -243,6 +247,7 @@ sys.exit(1)`;
     this.doaMonitoringInterval = setInterval(async () => {
       const angle = await this.readDOAAngle();
       if (angle !== null) {
+        const smoothedAngle = this.smoothAngle(angle);
         const timestamp = Date.now();
         const relativeTime = timestamp - this.recordingStartTime;
         const windowStart = Math.max(
@@ -250,14 +255,14 @@ sys.exit(1)`;
           Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs
         );
         const windowEnd = windowStart + samplingIntervalMs;
-        const mappedChannel = this.mapAngleToChannel(angle);
-        const accuracy = this.calculateAccuracy(angle, mappedChannel);
+        const mappedChannel = this.mapAngleToChannel(smoothedAngle);
+        const accuracy = this.calculateAccuracy(smoothedAngle, mappedChannel);
 
         this.doaSegments.push({
           start: windowStart,
           end: windowEnd,
           channel: mappedChannel,
-          angle: angle,
+          angle: smoothedAngle,
           accuracy: accuracy,
         });
       }
@@ -283,6 +288,36 @@ sys.exit(1)`;
   }
 
   /**
+   * Smooth angle readings using circular mean to reduce noise
+   */
+  private static smoothAngle(angle: number): number {
+    // Normalize angle
+    const normalizedAngle = ((angle % 360) + 360) % 360;
+
+    // Add to buffer
+    this.recentAngles.push(normalizedAngle);
+
+    // Keep only recent readings
+    if (this.recentAngles.length > this.SMOOTHING_WINDOW_SIZE) {
+      this.recentAngles.shift();
+    }
+
+    // Calculate circular mean (handles wrapping)
+    if (this.recentAngles.length === 1) {
+      return this.recentAngles[0];
+    }
+
+    // Convert to radians for circular mean calculation
+    const radians = this.recentAngles.map(a => (a * Math.PI) / 180);
+    const sinSum = radians.reduce((sum, r) => sum + Math.sin(r), 0);
+    const cosSum = radians.reduce((sum, r) => sum + Math.cos(r), 0);
+    const meanRad = Math.atan2(sinSum / radians.length, cosSum / radians.length);
+    const meanDeg = (meanRad * 180) / Math.PI;
+
+    return ((meanDeg % 360) + 360) % 360;
+  }
+
+  /**
    * Map DOA angle to channel using 90° quadrants
    */
   private static mapAngleToChannel(angle: number): number {
@@ -296,6 +331,7 @@ sys.exit(1)`;
 
   /**
    * Calculate accuracy based on distance from quadrant center
+   * Handles angle wrapping correctly (e.g., 350° to 45° = 55° distance, not 305°)
    */
   private static calculateAccuracy(angle: number, channel: number): number {
     const normalizedAngle = ((angle % 360) + 360) % 360;
@@ -308,7 +344,13 @@ sys.exit(1)`;
 
     const center = centers[channel];
     const maxDistance = 45;
-    const distance = Math.abs(normalizedAngle - center);
+
+    // Calculate circular distance (handles wrapping)
+    let distance = Math.abs(normalizedAngle - center);
+    if (distance > 180) {
+      distance = 360 - distance; // Wrap around the circle
+    }
+
     const accuracy = 100 * (1 - distance / maxDistance);
 
     return Math.round(Math.max(0, Math.min(100, accuracy)) * 10) / 10;
@@ -323,7 +365,8 @@ sys.exit(1)`;
   ): DOASegment[] {
     if (segments.length === 0) return [];
 
-    const filtered = segments.filter((seg) => seg.accuracy >= 30);
+    // Increased accuracy threshold from 30% to 50% for better speaker identification
+    const filtered = segments.filter((seg) => seg.accuracy >= 50);
     if (filtered.length === 0) return [];
 
     const merged: DOASegment[] = [];
