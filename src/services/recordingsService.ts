@@ -8,8 +8,6 @@ import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
 export interface DOAMetadata {
-  doaAngle?: number | null;
-  doaData?: Array<{ angle: number; timestamp: number }>;
   doaSegments?: Array<{
     start: number; // milliseconds
     end: number; // milliseconds
@@ -17,7 +15,6 @@ export interface DOAMetadata {
     angle: number; // DOA angle
     accuracy: number; // 0-100, percentage accuracy
   }>;
-  doaReadings?: Array<{ angle: number; timestamp: number }>;
 }
 
 export class RecordingService {
@@ -42,47 +39,14 @@ export class RecordingService {
       }
 
       // Add DOA segments for transcript files
-      if (fileType === "transcript" && doaMetadata) {
-        if (doaMetadata.doaSegments && doaMetadata.doaSegments.length > 0) {
-          formData.append(
-            "doaSegments",
-            JSON.stringify(doaMetadata.doaSegments)
-          );
-        }
-        //LOAI - FOR ME: check if we need to add this since we're getting the needed data from segments already "doaMetadata.doaReadings" and "the old format"
-        if (doaMetadata.doaReadings && doaMetadata.doaReadings.length > 0) {
-          formData.append(
-            "doaReadings",
-            JSON.stringify(doaMetadata.doaReadings)
-          );
-        }
-        // LOAI - FOR ME: check if we need to add this since we're getting the needed data from segments already "doaMetadata.doaReadings" and "the old format"
-        if (
-          doaMetadata.doaAngle !== undefined &&
-          doaMetadata.doaAngle !== null
-        ) {
-          formData.append("doaAngle", doaMetadata.doaAngle.toString());
-        }
-        if (doaMetadata.doaData && doaMetadata.doaData.length > 0) {
-          formData.append("doaData", JSON.stringify(doaMetadata.doaData));
-        }
+      if (fileType === "transcript" && doaMetadata?.doaSegments?.length > 0) {
+        formData.append(
+          "doaSegments",
+          JSON.stringify(doaMetadata.doaSegments)
+        );
       }
 
-      // Add DOA metadata for diarization files (backward compatibility)
-      //LOAI - FOR ME: check if we need since we're not using diarization files anymore
-      if (fileType === "diarization" && doaMetadata) {
-        if (
-          doaMetadata.doaAngle !== undefined &&
-          doaMetadata.doaAngle !== null
-        ) {
-          formData.append("doaAngle", doaMetadata.doaAngle.toString());
-        }
-        if (doaMetadata.doaData && doaMetadata.doaData.length > 0) {
-          formData.append("doaData", JSON.stringify(doaMetadata.doaData));
-        }
-      }
-
-      // Add recording ID to link transcript and diarization files (we're not using diarization files anymore) - will be removed later. LOAI - FOR ME: check if we need to add this since we're not using diarization files anymore
+      // Add recording ID
       const recordingId = getFileName(filePath).split(".")[0];
       formData.append("recordingId", recordingId);
 

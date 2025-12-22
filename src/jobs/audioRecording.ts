@@ -17,7 +17,6 @@ import {
   DOAReading,
   type DOASegment,
 } from "../services/doaService";
-import { formatDOASegments } from "../utils/helpers";
 
 dotenv.config();
 
@@ -128,7 +127,7 @@ export const startRecording = async () => {
     const doaResult = DOAService.stopDOAMonitoring();
 
     // Prepare DOA metadata for upload
-    let doaMetadata;
+    let doaMetadata: DOAMetadata | undefined;
     let doaJsonFilePath: string | undefined;
 
     if (
@@ -136,57 +135,27 @@ export const startRecording = async () => {
       !Array.isArray(doaResult) &&
       "segments" in doaResult
     ) {
-      // New format with segments
       const segmentsResult = doaResult as {
         segments: DOASegment[];
         readings: DOAReading[];
       };
-      doaMetadata = {
-        doaSegments:
-          segmentsResult.segments.length > 0
-            ? segmentsResult.segments
-            : undefined,
-        doaReadings:
-          segmentsResult.readings.length > 0
-            ? segmentsResult.readings
-            : undefined,
-      };
 
-      // Generate JSON file when segments exist
-      if (doaMetadata.doaSegments && doaMetadata.doaSegments.length > 0) {
+      if (segmentsResult.segments.length > 0) {
+        doaMetadata = {
+          doaSegments: segmentsResult.segments,
+        };
+
+        // Generate JSON file in pyannote-compatible format
         doaJsonFilePath = DOAService.generateDOAJsonFile(
-          doaMetadata.doaSegments,
+          segmentsResult.segments,
           recordingId,
-          RECORDING_DIR
+          RECORDING_DIR,
+          true // pyannote-compatible format
         );
         logger.info(
           `📄 Created DOA JSON file: ${getFileName(doaJsonFilePath)}`
         );
       }
-
-      // Print DOA segments
-      console.log("\n📊 ========== DOA SEGMENTS (Before Upload) ==========");
-      if (doaMetadata.doaSegments) {
-        console.log(formatDOASegments(doaMetadata.doaSegments));
-        console.log("\n📊 Raw JSON:");
-        console.log(JSON.stringify(doaMetadata.doaSegments, null, 2));
-      }
-      if (doaMetadata.doaReadings) {
-        console.log(
-          "\n📊 DOA Readings:",
-          doaMetadata.doaReadings.length,
-          "readings"
-        );
-      }
-      console.log("📊 =================================================\n");
-    } else {
-      // Backward compatibility with old format
-      const doaReadings = doaResult as DOAReading[];
-      const latestDOAAngle = DOAService.getLatestDOAAngle();
-      doaMetadata = {
-        doaAngle: latestDOAAngle,
-        doaData: doaReadings.length > 0 ? doaReadings : undefined,
-      };
     }
 
     RecordingService.convertAndUploadToServer(
@@ -236,30 +205,14 @@ export const stopRecording = async () => {
             const doaJsonFilePath = DOAService.generateDOAJsonFile(
               segmentsResult.segments,
               recordingId,
-              RECORDING_DIR
+              RECORDING_DIR,
+              true // pyannote-compatible format
             );
             logger.info(
               `📄 Saved DOA segments to JSON file: ${getFileName(doaJsonFilePath)}`
             );
           }
         }
-      }
-
-      // Print DOA segments when manually stopping - LOAI - FOR ME: remove when done debugging
-      if (
-        typeof doaResult === "object" &&
-        !Array.isArray(doaResult) &&
-        "segments" in doaResult
-      ) {
-        const segmentsResult = doaResult as {
-          segments: DOASegment[];
-          readings: DOAReading[];
-        };
-        console.log("\n📊 ========== DOA SEGMENTS (On Manual Stop) ==========");
-        console.log(formatDOASegments(segmentsResult.segments));
-        console.log("\n📊 Raw JSON:");
-        console.log(JSON.stringify(segmentsResult.segments, null, 2));
-        console.log("📊 ===================================================\n");
       }
     }
     micInstance.stop();
@@ -335,7 +288,6 @@ const handleInterruptedFiles = async () => {
 
           doaMetadata = {
             doaSegments: jsonData.segments || undefined,
-            doaReadings: jsonData.readings || undefined,
           };
           doaJsonFilePath = jsonFilePath;
         } catch (error: any) {
