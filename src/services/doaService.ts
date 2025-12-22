@@ -393,7 +393,7 @@ sys.exit(1)`;
     if (segments.length === 0) return [];
 
     // Increased accuracy threshold from 30% to 50% for better speaker identification
-    const filtered = segments.filter((seg) => seg.accuracy >= 65);
+    const filtered = segments.filter((seg) => seg.accuracy >= 50);
     if (filtered.length === 0) return [];
 
     const merged: DOASegment[] = [];
