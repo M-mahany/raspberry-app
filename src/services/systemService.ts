@@ -471,9 +471,11 @@ export class SystemService {
     return new Promise((resolve) => {
       logger.info("🎙️ Checking mic availability...");
 
+      // Test with 6 channels for ReSpeaker USB Mic Array
+      // Falls back to 1 channel if 6-channel test fails (backward compatibility)
       const arecord = spawn("arecord", [
         "-c",
-        "1",
+        "6", // Try 6 channels first (ReSpeaker USB Mic Array)
         "-r",
         "16000",
         "-f",
@@ -486,19 +488,77 @@ export class SystemService {
       ]);
 
       arecord.on("error", (err) => {
-        logger.error("❌ Mic check process error:", err);
-        resolve(false);
+        logger.warn(
+          `⚠️ 6-channel mic check failed, trying 1-channel: ${err}`,
+        );
+        // Fallback to 1-channel test
+        const fallbackArecord = spawn("arecord", [
+          "-c",
+          "1",
+          "-r",
+          "16000",
+          "-f",
+          "S16_LE",
+          "-t",
+          "raw",
+          "-D",
+          micDevice || "plughw:1,0",
+          "--duration=1",
+        ]);
+
+        fallbackArecord.on("error", (fallbackErr) => {
+          logger.error("❌ Mic check process error:", fallbackErr);
+          resolve(false);
+        });
+
+        fallbackArecord.on("close", async (code) => {
+          if (code !== 0) {
+            logger.error(`❌ arecord exited with code ${code}`);
+            return resolve(false);
+          }
+
+          await waitForMs(1100);
+          logger.info("✅ Mic is available and responsive (1-channel mode).");
+          resolve(true);
+        });
       });
 
       arecord.on("close", async (code) => {
         if (code !== 0) {
-          logger.error(`❌ arecord exited with code ${code}`);
-          return resolve(false);
+          logger.warn(
+            `⚠️ 6-channel test failed (code ${code}), mic may support fewer channels`,
+          );
+          // Try 1-channel fallback
+          const fallbackArecord = spawn("arecord", [
+            "-c",
+            "1",
+            "-r",
+            "16000",
+            "-f",
+            "S16_LE",
+            "-t",
+            "raw",
+            "-D",
+            micDevice || "plughw:1,0",
+            "--duration=1",
+          ]);
+
+          fallbackArecord.on("close", async (fallbackCode) => {
+            if (fallbackCode !== 0) {
+              logger.error(`❌ arecord exited with code ${fallbackCode}`);
+              return resolve(false);
+            }
+
+            await waitForMs(1100);
+            logger.info("✅ Mic is available and responsive (1-channel mode).");
+            resolve(true);
+          });
+          return;
         }
 
         await waitForMs(1100);
 
-        logger.info("✅ Mic is available and responsive.");
+        logger.info("✅ Mic is available and responsive (6-channel mode).");
         resolve(true);
       });
     });
