@@ -27,7 +27,6 @@ const recordingFiles = new Set<string>(); // Stores active recordings
 let micInstance: MicInstance;
 let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
-let currentRawFile: string | null = null; // Track current recording file
 
 let recordingSession = false;
 let restartTimer: NodeJS.Timeout | null = null;
@@ -72,7 +71,6 @@ export const startRecording = async () => {
   const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
-  currentRawFile = rawFile; // Store current file path
 
   outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -113,20 +111,12 @@ export const startRecording = async () => {
       doaJsonFilePath
     );
 
-    currentRawFile = null; // Clear current file reference after processing
   });
 
   micInputStream.on("stopComplete", async () => {
     recordingSession = false;
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
 
-    // Generate JSON file when mic stops (for manual stops/app shutdown)
-    // Only if file stream hasn't finished yet (currentRawFile still points to this file)
-    // This ensures JSON is saved even if stopRecording() is called before file stream finishes
-    // Note: outputFileStream.once("finish") is the primary handler for normal completion
-    if (currentRawFile === rawFile) {
-      await stopAndGenerateDOAJson(rawFile);
-    }
   });
 
   micInstance.start();
