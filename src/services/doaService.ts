@@ -159,9 +159,11 @@ export class DOAService {
       return null;
     }
 
+    const doaLibPath = '/opt/usb_4_mic_array';
+
     const pythonScript = `import sys
 import os
-sys.path.insert(0, '/home/ops-ai-node33/usb_4_mic_array')
+sys.path.insert(0, '${doaLibPath}')
 from tuning import Tuning
 import usb.core
 import time

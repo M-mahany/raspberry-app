@@ -276,6 +276,14 @@ export const scheduleNextRestart = () => {
 };
 
 const runOnStart = async () => {
+  // Install DOA dependencies (awaited to ensure they're ready before recording)
+  try {
+    await SystemService.installDOADependencies();
+  } catch (err: any) {
+    logger.error(`⚠️ Failed to install DOA dependencies: ${err?.message || err}`);
+    // Continue anyway - DOA service has fallback mechanisms
+  }
+
   startRecording(); // Start recording first
   scheduleNextRestart();
   await handleInterruptedFiles(); // Run it immediately once

@@ -588,6 +588,78 @@ export class SystemService {
     }
   }
 
+  // Install DOA dependencies (Python3, pyusb, ReSpeaker USB Mic Array library)
+  static async installDOADependencies() {
+    try {
+      logger.info("🔍 Checking for Python3...");
+      await execPromise("which python3");
+      logger.info("✅ Python3 is already installed.");
+    } catch {
+      logger.warn("⚠️ Python3 not found. Installing...");
+      try {
+        await execPromise("sudo apt update");
+        await execPromise("sudo apt install -y python3 python3-pip");
+        logger.info("✅ Python3 installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install Python3:", installErr);
+        return;
+      }
+    }
+
+    try {
+      logger.info("🔍 Checking for pip3...");
+      await execPromise("which pip3");
+      logger.info("✅ pip3 is already installed.");
+    } catch {
+      logger.warn("⚠️ pip3 not found. Installing...");
+      try {
+        await execPromise("sudo apt install -y python3-pip");
+        logger.info("✅ pip3 installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install pip3:", installErr);
+        return;
+      }
+    }
+
+    try {
+      logger.info("🔍 Checking for pyusb...");
+      await execPromise("python3 -c 'import usb.core'");
+      logger.info("✅ pyusb is already installed.");
+    } catch {
+      logger.warn("⚠️ pyusb not found. Installing...");
+      try {
+        await execPromise("sudo pip3 install pyusb");
+        logger.info("✅ pyusb installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install pyusb:", installErr);
+        return;
+      }
+    }
+
+    const doaLibPath = "/opt/usb_4_mic_array";
+    try {
+      logger.info(`🔍 Checking for ReSpeaker USB Mic Array library at ${doaLibPath}...`);
+      await execPromise(`test -d "${doaLibPath}" && test -f "${doaLibPath}/tuning.py"`);
+      logger.info("✅ ReSpeaker USB Mic Array library is already installed.");
+    } catch {
+      logger.warn("⚠️ ReSpeaker USB Mic Array library not found. Installing...");
+      try {
+        await execPromise("sudo apt install -y git");
+        await execPromise(`sudo mkdir -p "$(dirname "${doaLibPath}")"`);
+        await execPromise(`sudo rm -rf "${doaLibPath}"`);
+        await execPromise(
+          `sudo git clone https://github.com/respeaker/usb_audio_mic_array.git "${doaLibPath}"`
+        );
+        logger.info("✅ ReSpeaker USB Mic Array library installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install ReSpeaker USB Mic Array library:", installErr);
+        return;
+      }
+    }
+
+    logger.info("✅ All DOA dependencies are installed and ready.");
+  }
+
   static async realTimeUsbEventDetection() {
     usb.on("attach", async () => {
       logger.info("🔌 USB device attached");
