@@ -27,7 +27,6 @@ const recordingFiles = new Set<string>(); // Stores active recordings
 let micInstance: MicInstance;
 let micInputStream: MicInputStream;
 let outputFileStream: WriteStream;
-let currentRawFile: string | null = null; // Track current recording file
 
 let recordingSession = false;
 let restartTimer: NodeJS.Timeout | null = null;
@@ -72,7 +71,6 @@ export const startRecording = async () => {
   const fileName = `${recordingStartTime}.raw`;
   recordingFiles.add(fileName);
   const rawFile = path.join(RECORDING_DIR, fileName);
-  currentRawFile = rawFile; // Store current file path
 
   outputFileStream = fs.createWriteStream(rawFile, {
     encoding: "binary",
@@ -111,11 +109,9 @@ export const startRecording = async () => {
       logger.error(
         `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}`
       );
-      currentRawFile = null; // Clear current file
       return;
     }
 
-    currentRawFile = null; // Clear current file after processing
     RecordingService.convertAndUploadToServer(
       rawFile,
       doaJsonFilePath
@@ -126,7 +122,7 @@ export const startRecording = async () => {
   micInputStream.on("stopComplete", async () => {
     recordingSession = false;
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
-    currentRawFile = null; // Clear current file
+
   });
 
   micInstance.start();
@@ -154,43 +150,11 @@ const stopAndGenerateDOAJson = async (rawFile: string) => {
 // Stops the current recording gracefully
 export const stopRecording = async () => {
   if (micInstance) {
-    // Stop DOA monitoring and generate JSON file before stopping (important for PM2 restarts)
-    if (currentRawFile && recordingSession) {
-      logger.info(`🛑 Stopping recording and generating DOA JSON for: ${getFileName(currentRawFile)}`);
-      try {
-        const doaJsonFilePath = await stopAndGenerateDOAJson(currentRawFile);
-        if (doaJsonFilePath) {
-          // Queue the file for conversion/upload (don't await to avoid blocking shutdown)
-          RecordingService.convertAndUploadToServer(
-            currentRawFile,
-            doaJsonFilePath
-          ).catch((err) => {
-            logger.error(`❌ Error processing file after stop: ${err?.message || err}`);
-          });
-        }
-      } catch (err: any) {
-        logger.error(`❌ Error generating DOA JSON on stop: ${err?.message || err}`);
-      }
-    }
-
-    // Stop mic
+    // Stop mic - this will trigger stopComplete event which handles DOA JSON generation
     micInstance.stop();
-
-    // Wait a bit for stream to finish writing
-    if (outputFileStream) {
-      await new Promise<void>((resolve) => {
-        outputFileStream.once("finish", () => resolve());
-        outputFileStream.once("close", () => resolve());
-        outputFileStream.end();
-        // Timeout after 2 seconds to avoid hanging
-        setTimeout(() => resolve(), 2000);
-      });
-    }
-
     outputFileStream?.close();
     micInputStream?.removeAllListeners(); // Prevent memory leaks
     await RecordingService.killExistingRecordings();
-    currentRawFile = null; // Clear current file
   }
 };
 
@@ -384,16 +348,11 @@ setInterval(() => {
 
 SystemService.realTimeUsbEventDetection();
 
-const gracefulShutdown = async (signal: string) => {
-  logger.info(`👋 Received ${signal}, gracefully shutting down...`);
+process.on("SIGINT", async () => {
+  logger.info("👋 Gracefully shutting down...");
   await stopRecording();
-  // Give a moment for any pending operations
-  await new Promise((resolve) => setTimeout(resolve, 1000));
   process.exit(0);
-};
-
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+});
 
 // Initialize background retry loop to resend queued notifications
 // once internet connection (via socket) is restored
