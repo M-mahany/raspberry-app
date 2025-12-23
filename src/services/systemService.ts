@@ -648,7 +648,7 @@ export class SystemService {
         await execPromise(`sudo mkdir -p "$(dirname "${doaLibPath}")"`);
         await execPromise(`sudo rm -rf "${doaLibPath}"`);
         await execPromise(
-          `sudo git clone https://github.com/respeaker/usb_audio_mic_array.git "${doaLibPath}"`
+          `sudo GIT_TERMINAL_PROMPT=0 git clone https://github.com/respeaker/usb_4_mic_array.git "${doaLibPath}"`
         );
         logger.info("✅ ReSpeaker USB Mic Array library installed successfully.");
       } catch (installErr) {
