@@ -137,10 +137,6 @@ export class RecordingService {
       logger.error(
         `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error?.message || error}`,
       );
-      // Note: uploadRecording already handles deletion of mp3File and doaJsonFilePath
-      // for "already exists" and "Invalid media file" cases, so we only need to handle
-      // conversion errors here (which we already did above)
-      throw error;
     }
   }
   static async killExistingRecordings() {
