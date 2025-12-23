@@ -674,6 +674,20 @@ export class SystemService {
       }
     }
 
+    // Patch Python 3 compatibility: replace tostring() with tobytes()
+    try {
+      logger.info("🔧 Applying Python 3 compatibility patch...");
+      // Patch all Python files in the library directory
+      // Replace various forms of tostring() with tobytes()
+      await execPromise(
+        `find "${doaLibPath}" -name "*.py" -type f -exec sed -i 's/\\.tostring()/\\.tobytes()/g; s/\\.tostring/\\.tobytes/g; s/array\\.array\\.tostring/array.array.tobytes/g' {} +`,
+      );
+      logger.info("✅ Python 3 compatibility patch applied successfully.");
+    } catch (patchErr) {
+      logger.warn("⚠️ Failed to apply Python 3 compatibility patch:", patchErr);
+      // Continue anyway - the error will be caught at runtime if needed
+    }
+
     logger.info("✅ All DOA dependencies are installed and ready.");
   }
 
