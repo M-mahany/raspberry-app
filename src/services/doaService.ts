@@ -59,11 +59,10 @@ export class DOAService {
         return pythonResult;
       }
 
-      // Fallback to Node.js USB (may fail if native bindings missing or permissions issue)
-      // Errors are suppressed as this is a fallback mechanism
+      // Fallback to Node.js USB
       return await this.readDOAViaNodeUSB();
     } catch (error: any) {
-      // Suppress all errors - Python method is preferred, USB fallback errors are expected
+      logger.error(`❌ Error reading DOA angle: ${error?.message || error}`);
       return null;
     }
   }
@@ -87,17 +86,7 @@ export class DOAService {
       return new Promise<number | null>((resolve) => {
         try {
           foundDevice.open();
-
-          // Wrap configDescriptor access in try-catch as it may throw LIBUSB errors
-          let config;
-          try {
-            config = foundDevice.configDescriptor;
-          } catch (e) {
-            // Suppress LIBUSB errors - device may be busy or in use
-            foundDevice.close();
-            return resolve(null);
-          }
-
+          const config = foundDevice.configDescriptor;
           if (config) {
             foundDevice.setConfiguration(config.bConfigurationValue);
           } else {
@@ -145,15 +134,11 @@ export class DOAService {
               }
             }
           );
-        } catch (e: any) {
-          // Suppress expected USB errors (device busy, permissions, etc.)
-          // These are normal when Python method is preferred or device is in use
+        } catch {
           resolve(null);
         }
       });
     } catch (error: any) {
-      // Suppress expected USB errors - these are normal fallback scenarios
-      // The Python method is preferred, so USB errors are expected when Python works
       return null;
     }
   }
