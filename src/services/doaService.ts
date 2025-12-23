@@ -221,7 +221,7 @@ sys.exit(1)`;
     const tempFile = join(tmpdir(), `doa_read_${Date.now()}.py`);
     try {
       writeFileSync(tempFile, pythonScript);
-      const { stdout, stderr } = await execPromise(`python3 "${tempFile}"`);
+      const { stdout } = await execPromise(`python3 "${tempFile}"`);
       const angle = parseInt(stdout.trim(), 10);
       unlinkSync(tempFile);
 
