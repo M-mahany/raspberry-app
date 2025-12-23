@@ -107,8 +107,19 @@ export const startRecording = async () => {
 
     if (!doaJsonFilePath) {
       logger.error(
-        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}`,
+        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}. Deleting invalid recording.`,
       );
+      // Delete the raw file since it doesn't have a JSON file (invalid)
+      try {
+        await fs.unlink(rawFile);
+        logger.info(
+          `🗑️ Deleted recording without JSON DOA: ${getFileName(rawFile)}`,
+        );
+      } catch (err: any) {
+        logger.error(
+          `🚨 Error deleting invalid recording: ${err?.message || err}`,
+        );
+      }
       return;
     }
 
@@ -164,6 +175,7 @@ export const restartRecording = async () => {
   setTimeout(() => startRecording(), 1000);
 };
 
+
 const handleInterruptedFiles = async () => {
   try {
     const files = await fs.readdir(RECORDING_DIR);
@@ -180,22 +192,86 @@ const handleInterruptedFiles = async () => {
       return path.extname(file) === ".mp3" && !recordingFiles.has(rawFileName);
     });
 
-    // Filter out raw files that don't have corresponding JSON files
-    const rawFilesWithJson = filteredRawFiles.filter((file) => {
-      const recordingId = path.basename(file, ".raw");
-      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-      return fs.existsSync(jsonFilePath);
-    });
+    // Find audio files that don't have corresponding JSON files (invalid - should be deleted)
+    const filesToDelete: Array<{ file: string; type: "raw" | "mp3" }> = [];
 
-    // Log files missing JSON
     filteredRawFiles.forEach((file) => {
       const recordingId = path.basename(file, ".raw");
       const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
       if (!fs.existsSync(jsonFilePath)) {
-        logger.error(
-          `❌ DOA JSON file not found for interrupted recording: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`,
+        filesToDelete.push({ file, type: "raw" });
+        logger.warn(
+          `⚠️ Raw file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
         );
       }
+    });
+
+    filteredMp3Files.forEach((file) => {
+      const recordingId = path.basename(file, ".mp3");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+      if (!fs.existsSync(jsonFilePath)) {
+        filesToDelete.push({ file, type: "mp3" });
+        logger.warn(
+          `⚠️ MP3 file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
+        );
+      }
+    });
+
+    // Find and delete orphaned JSON files (JSON files without corresponding audio files)
+    const jsonFiles = files.filter((file) => path.extname(file) === ".json");
+    const orphanedJsonFiles: string[] = [];
+    jsonFiles.forEach((file) => {
+      const recordingId = path.basename(file, ".json");
+      const rawFilePath = path.join(RECORDING_DIR, `${recordingId}.raw`);
+      const mp3FilePath = path.join(RECORDING_DIR, `${recordingId}.mp3`);
+
+      // Check if neither raw nor mp3 file exists
+      if (!fs.existsSync(rawFilePath) && !fs.existsSync(mp3FilePath)) {
+        // Also check if it's not an active recording
+        if (!recordingFiles.has(`${recordingId}.raw`)) {
+          orphanedJsonFiles.push(file);
+          logger.warn(
+            `⚠️ Orphaned JSON file (no corresponding audio): ${getFileName(file)}. Will be deleted.`,
+          );
+        }
+      }
+    });
+
+    // Delete invalid audio files (missing JSON) - just delete the audio file since JSON doesn't exist
+    for (const { file, type } of filesToDelete) {
+      const audioFilePath = path.join(RECORDING_DIR, file);
+      try {
+        await fs.promises.unlink(audioFilePath);
+        logger.info(
+          `🗑️ Deleted invalid ${type.toUpperCase()} file (missing JSON): ${getFileName(audioFilePath)}`,
+        );
+      } catch (err: any) {
+        logger.error(
+          `🚨 Error deleting invalid ${type.toUpperCase()} file: ${err?.message || err}`,
+        );
+      }
+    }
+
+    // Delete orphaned JSON files (no corresponding audio files)
+    for (const file of orphanedJsonFiles) {
+      const jsonFilePath = path.join(RECORDING_DIR, file);
+      try {
+        await fs.promises.unlink(jsonFilePath);
+        logger.info(
+          `🗑️ Deleted orphaned JSON file: ${getFileName(jsonFilePath)} (no corresponding audio file)`,
+        );
+      } catch (err: any) {
+        logger.error(
+          `🚨 Error deleting orphaned JSON file: ${err?.message || err}`,
+        );
+      }
+    }
+
+    // Filter out raw files that have corresponding JSON files
+    const rawFilesWithJson = filteredRawFiles.filter((file) => {
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+      return fs.existsSync(jsonFilePath);
     });
 
     const conversionPromises = rawFilesWithJson.map(async (file) => {
@@ -207,18 +283,26 @@ const handleInterruptedFiles = async () => {
         `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
       );
 
+      // convertAndUploadToServer already handles file deletion on success/error
       await RecordingService.convertAndUploadToServer(
         rawFilePath,
         jsonFilePath,
       );
     });
 
-    if (filteredRawFiles?.length) {
+    if (rawFilesWithJson?.length) {
       await Promise.all(conversionPromises);
     }
 
-    if (filteredMp3Files?.length) {
-      for (const file of filteredMp3Files) {
+    // Filter MP3 files that have corresponding JSON files
+    const mp3FilesWithJson = filteredMp3Files.filter((file) => {
+      const recordingId = path.basename(file, ".mp3");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+      return fs.existsSync(jsonFilePath);
+    });
+
+    if (mp3FilesWithJson?.length) {
+      for (const file of mp3FilesWithJson) {
         logger.info(
           `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
         );
@@ -226,24 +310,11 @@ const handleInterruptedFiles = async () => {
         const recordingId = path.basename(file, ".mp3");
         const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
 
-        // Check if DOA JSON file exists for interrupted MP3 recording
-        if (!fs.existsSync(jsonFilePath)) {
-          logger.error(
-            `❌ DOA JSON file not found for interrupted MP3 file: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`,
-          );
-          continue;
-        }
-
-        try {
-          await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
-        } catch (error: any) {
-          logger.error(
-            `❌ Error uploading file: ${getFileName(file)} - ${error?.message || error}`,
-          );
-        }
+        // uploadRecording already handles file deletion on success/error
+        await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
       }
     }
-    if (!filteredMp3Files?.length && !filteredRawFiles?.length) {
+    if (!filteredMp3Files?.length && !filteredRawFiles?.length && !filesToDelete.length && !orphanedJsonFiles.length) {
       logger.info("✅ Checking complete! No Interrupted files found");
     }
   } catch (err) {

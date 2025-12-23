@@ -8,6 +8,36 @@ import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
 export class RecordingService {
+  /**
+   * Delete both audio file and its corresponding JSON file as a pair
+   */
+  static async deleteFilePair(
+    audioFilePath: string,
+    jsonFilePath: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      // Delete audio file
+      if (fs.existsSync(audioFilePath)) {
+        await fs.promises.unlink(audioFilePath);
+        logger.info(
+          `🗑️ Deleted audio file: ${getFileName(audioFilePath)} (${reason})`,
+        );
+      }
+
+      // Delete JSON file
+      if (fs.existsSync(jsonFilePath)) {
+        await fs.promises.unlink(jsonFilePath);
+        logger.info(
+          `🗑️ Deleted JSON file: ${getFileName(jsonFilePath)} (${reason})`,
+        );
+      }
+    } catch (err: any) {
+      logger.error(
+        `🚨 Error deleting file pair (${reason}): ${err?.message || err}`,
+      );
+    }
+  }
   static async uploadRecording(
     filePath: string,
     doaJsonFilePath: string,
@@ -37,23 +67,8 @@ export class RecordingService {
         `✅ Uploaded ${getFileName(filePath)} successfully to the server`,
       );
 
-      // Delete audio file after successful upload
-      fs.unlink(filePath, (err) => {
-        if (err) {
-          logger.error(`🚨 Error deleting file after upload: ${err}`);
-        }
-      });
-
-      // Delete JSON file after successful upload
-      fs.unlink(doaJsonFilePath, (err) => {
-        if (err) {
-          logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-        } else {
-          logger.info(
-            `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`,
-          );
-        }
-      });
+      // Delete both files after successful upload
+      await this.deleteFilePair(filePath, doaJsonFilePath, "successful upload");
     } catch (error: any) {
       if (
         isAxiosError(error) &&
@@ -61,23 +76,12 @@ export class RecordingService {
           "already exists for this recording.",
         )
       ) {
-        fs.unlink(filePath, (err) => {
-          logger.error(
-            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
-          );
-          if (err) {
-            logger.error(
-              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
-            );
-          }
-        });
-
-        // Delete JSON file if audio was already uploaded
-        fs.unlink(doaJsonFilePath, (err) => {
-          if (err) {
-            logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-          }
-        });
+        // File already uploaded - delete both files
+        await this.deleteFilePair(
+          filePath,
+          doaJsonFilePath,
+          "already uploaded to server",
+        );
       } else {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
@@ -86,20 +90,12 @@ export class RecordingService {
           isAxiosError(error) &&
           error?.response?.data?.message?.includes("Invalid media file")
         ) {
-          fs.unlink(filePath, (err) => {
-            if (err) {
-              logger.error(
-                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
-              );
-            }
-          });
-
-          // Delete JSON file if audio file is invalid
-          fs.unlink(doaJsonFilePath, (err) => {
-            if (err) {
-              logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
-            }
-          });
+          // Delete both files if media file is invalid (treat as pair)
+          await this.deleteFilePair(
+            filePath,
+            doaJsonFilePath,
+            "invalid media file",
+          );
         }
       }
     }
@@ -113,22 +109,38 @@ export class RecordingService {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
       if (mp3File) {
         logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
+        // uploadRecording handles deletion of mp3File and doaJsonFilePath on success/error
         await this.uploadRecording(mp3File, doaJsonFilePath);
-      }
-    } catch (error) {
-      logger.error(
-        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
-      );
-
-      // Clean up JSON file if conversion/upload fails
-      if (fs.existsSync(doaJsonFilePath)) {
-        try {
-          fs.unlinkSync(doaJsonFilePath);
-          logger.warn(`⚠️ Deleted DOA JSON file due to conversion error`);
-        } catch (err) {
-          logger.warn(`⚠️ Could not delete DOA JSON file: ${err}`);
+        // Delete raw file after successful upload (mp3 and JSON already deleted by uploadRecording)
+        if (fs.existsSync(rawFile)) {
+          try {
+            await fs.promises.unlink(rawFile);
+            logger.info(
+              `🗑️ Deleted raw file after successful conversion/upload: ${getFileName(rawFile)}`,
+            );
+          } catch (err: any) {
+            logger.error(
+              `🚨 Error deleting raw file after successful upload: ${err?.message || err}`,
+            );
+          }
         }
+      } else {
+        // Conversion failed - delete both raw and JSON files
+        await this.deleteFilePair(
+          rawFile,
+          doaJsonFilePath,
+          "conversion failed",
+        );
+        throw new Error("Audio conversion failed - file may be corrupted");
       }
+    } catch (error: any) {
+      logger.error(
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error?.message || error}`,
+      );
+      // Note: uploadRecording already handles deletion of mp3File and doaJsonFilePath
+      // for "already exists" and "Invalid media file" cases, so we only need to handle
+      // conversion errors here (which we already did above)
+      throw error;
     }
   }
   static async killExistingRecordings() {
@@ -174,8 +186,7 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${
-            error.message || error
+          `🚨 Error checking for existing arecord processes: ${error.message || error
           }`,
         );
       }
