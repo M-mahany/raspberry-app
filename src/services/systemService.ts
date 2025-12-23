@@ -622,6 +622,25 @@ export class SystemService {
     }
 
     try {
+      logger.info("🔍 Checking for libusb-1.0-0-dev (required for Node.js USB package)...");
+      await execPromise("dpkg -l | grep -q libusb-1.0-0-dev");
+      logger.info("✅ libusb-1.0-0-dev is already installed.");
+    } catch {
+      logger.warn("⚠️ libusb-1.0-0-dev not found. Installing...");
+      try {
+        await execPromise("sudo apt install -y libusb-1.0-0-dev");
+        logger.info("✅ libusb-1.0-0-dev installed successfully.");
+        // Rebuild usb package after installing libusb
+        logger.info("🔧 Rebuilding usb package with native bindings...");
+        const appDir = process.cwd();
+        await execPromise(`cd "${appDir}" && npm rebuild usb`);
+        logger.info("✅ usb package rebuilt successfully.");
+      } catch (installErr) {
+        logger.warn(`⚠️ Failed to install libusb or rebuild usb package: ${installErr}. USB fallback may not work, but Python method should still work.`);
+      }
+    }
+
+    try {
       logger.info("🔍 Checking for pyusb...");
       await execPromise("python3 -c 'import usb.core'");
       logger.info("✅ pyusb is already installed.");

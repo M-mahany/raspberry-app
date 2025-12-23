@@ -137,15 +137,17 @@ const stopAndGenerateDOAJson = async (rawFile: string) => {
   // Stop DOA monitoring and get segments
   const doaSegments = DOAService.stopDOAMonitoring();
   const recordingId = getFileName(rawFile).split(".")[0];
-  let doaJsonFilePath: string | undefined;
 
-  // Generate DOA JSON file if segments exist
-  if (doaSegments.length > 0) {
-    doaJsonFilePath = DOAService.generateDOAJsonFile(
-      doaSegments,
-      recordingId,
-      RECORDING_DIR
-    );
+  // Always generate DOA JSON file, even with 0 segments (for server validation)
+  // This ensures the server knows the file was processed with DOA support
+  const doaJsonFilePath = DOAService.generateDOAJsonFile(
+    doaSegments,
+    recordingId,
+    RECORDING_DIR
+  );
+
+  if (doaSegments.length === 0) {
+    logger.warn(`⚠️ No DOA segments collected for recording: ${getFileName(rawFile)} (recording may have failed too quickly)`);
   }
 
   return doaJsonFilePath;
@@ -394,6 +396,29 @@ const gracefulShutdown = async (signal: string) => {
 
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+// Suppress unhandled USB errors (expected when Python method is used)
+process.on("uncaughtException", (error: Error) => {
+  const errorMsg = error.message || String(error);
+  if (errorMsg.includes("LIBUSB") || errorMsg.includes("usb") || errorMsg.includes("MODULE_NOT_FOUND")) {
+    // Suppress expected USB library errors - these are normal when Python method is preferred
+    return;
+  }
+  // Log other unhandled exceptions
+  logger.error(`❌ Uncaught exception: ${errorMsg}`);
+  console.error(error);
+});
+
+// Suppress unhandled promise rejections from USB library
+process.on("unhandledRejection", (reason: any) => {
+  const errorMsg = reason?.message || String(reason);
+  if (errorMsg.includes("LIBUSB") || errorMsg.includes("usb") || errorMsg.includes("MODULE_NOT_FOUND")) {
+    // Suppress expected USB library errors
+    return;
+  }
+  // Log other unhandled rejections
+  logger.error(`❌ Unhandled rejection: ${errorMsg}`);
+});
 
 // Initialize background retry loop to resend queued notifications
 // once internet connection (via socket) is restored
