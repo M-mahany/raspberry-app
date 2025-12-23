@@ -653,7 +653,16 @@ export class SystemService {
         "⚠️ ReSpeaker USB Mic Array library not found. Installing...",
       );
       try {
-        await execPromise("sudo apt install -y git");
+        // Check if git is installed, install if not
+        try {
+          await execPromise("which git");
+          logger.info("✅ Git is already installed.");
+        } catch {
+          logger.warn("⚠️ Git not found. Installing...");
+          await execPromise("sudo apt install -y git");
+          logger.info("✅ Git installed successfully.");
+        }
+
         await execPromise(`sudo mkdir -p "$(dirname "${doaLibPath}")"`);
         await execPromise(`sudo rm -rf "${doaLibPath}"`);
 
@@ -665,6 +674,20 @@ export class SystemService {
         logger.info(
           "✅ ReSpeaker USB Mic Array library installed successfully.",
         );
+
+        // Apply Python 3 compatibility patch only after fresh installation
+        try {
+          logger.info("🔧 Applying Python 3 compatibility patch...");
+          // Patch all Python files in the library directory
+          // Replace various forms of tostring() with tobytes()
+          await execPromise(
+            `find "${doaLibPath}" -name "*.py" -type f -exec sed -i 's/\\.tostring()/\\.tobytes()/g; s/\\.tostring/\\.tobytes/g; s/array\\.array\\.tostring/array.array.tobytes/g' {} +`,
+          );
+          logger.info("✅ Python 3 compatibility patch applied successfully.");
+        } catch (patchErr) {
+          logger.warn("⚠️ Failed to apply Python 3 compatibility patch:", patchErr);
+          // Continue anyway - the error will be caught at runtime if needed
+        }
       } catch (installErr) {
         logger.error(
           "❌ Failed to install ReSpeaker USB Mic Array library:",
@@ -672,20 +695,6 @@ export class SystemService {
         );
         return;
       }
-    }
-
-    // Patch Python 3 compatibility: replace tostring() with tobytes()
-    try {
-      logger.info("🔧 Applying Python 3 compatibility patch...");
-      // Patch all Python files in the library directory
-      // Replace various forms of tostring() with tobytes()
-      await execPromise(
-        `find "${doaLibPath}" -name "*.py" -type f -exec sed -i 's/\\.tostring()/\\.tobytes()/g; s/\\.tostring/\\.tobytes/g; s/array\\.array\\.tostring/array.array.tobytes/g' {} +`,
-      );
-      logger.info("✅ Python 3 compatibility patch applied successfully.");
-    } catch (patchErr) {
-      logger.warn("⚠️ Failed to apply Python 3 compatibility patch:", patchErr);
-      // Continue anyway - the error will be caught at runtime if needed
     }
 
     logger.info("✅ All DOA dependencies are installed and ready.");
