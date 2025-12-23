@@ -10,7 +10,7 @@ import { execSync } from "child_process";
 export class RecordingService {
   static async uploadRecording(
     filePath: string,
-    doaJsonFilePath: string
+    doaJsonFilePath: string,
   ): Promise<void> {
     try {
       const formData = new FormData();
@@ -24,7 +24,7 @@ export class RecordingService {
       }
       formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
       logger.info(
-        `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`
+        `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`,
       );
 
       await serverAPI.post("/recordings/device-upload", formData, {
@@ -34,7 +34,7 @@ export class RecordingService {
       });
 
       logger.info(
-        `✅ Uploaded ${getFileName(filePath)} successfully to the server`
+        `✅ Uploaded ${getFileName(filePath)} successfully to the server`,
       );
 
       // Delete audio file after successful upload
@@ -50,7 +50,7 @@ export class RecordingService {
           logger.error(`🚨 Error deleting DOA JSON file: ${err}`);
         } else {
           logger.info(
-            `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`
+            `🗑️ Deleted DOA JSON file: ${getFileName(doaJsonFilePath)}`,
           );
         }
       });
@@ -63,11 +63,11 @@ export class RecordingService {
       ) {
         fs.unlink(filePath, (err) => {
           logger.error(
-            `🚨File: ${getFileName(filePath)}, already uploaded to the server`
+            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
           );
           if (err) {
             logger.error(
-              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`
+              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
             );
           }
         });
@@ -89,7 +89,7 @@ export class RecordingService {
           fs.unlink(filePath, (err) => {
             if (err) {
               logger.error(
-                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`
+                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
               );
             }
           });
@@ -107,7 +107,7 @@ export class RecordingService {
 
   static async convertAndUploadToServer(
     rawFile: string,
-    doaJsonFilePath: string
+    doaJsonFilePath: string,
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
@@ -117,7 +117,7 @@ export class RecordingService {
       }
     } catch (error) {
       logger.error(
-        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
       );
 
       // Clean up JSON file if conversion/upload fails
@@ -174,7 +174,8 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${error.message || error
+          `🚨 Error checking for existing arecord processes: ${
+            error.message || error
           }`,
         );
       }

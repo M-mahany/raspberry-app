@@ -4,7 +4,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 
 const execPromise = promisify(exec);
 
@@ -20,7 +20,7 @@ const CONTROL_INDEX = 0x0000;
 
 // Channel configuration for 6-channel ReSpeaker USB Mic Array
 // Reference: https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/
-// 
+//
 // 6-channel firmware layout:
 // - Channel 0: Processed audio for ASR (beamformed, noise-suppressed) - EXCLUDED (processed, not raw)
 // - Channels 1-4: 4 microphones' raw data (4 directional mics) - USED FOR DOA
@@ -49,10 +49,30 @@ export class DOAService {
   private static readonly SMOOTHING_WINDOW_SIZE = 5; // Number of readings to average
 
   /**
+   * Check if DOA device is available
+   */
+  static async isDOADeviceAvailable(): Promise<boolean> {
+    try {
+      // Check if device exists using lsusb (vendor:product = 2886:0018)
+      const { stdout } = await execPromise("lsusb");
+      return stdout.includes("2886:0018");
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Read DOA angle from ReSpeaker USB Mic Array
    */
   static async readDOAAngle(): Promise<number | null> {
     try {
+      // Check if device is available first
+      const isAvailable = await this.isDOADeviceAvailable();
+      if (!isAvailable) {
+        logger.debug("⚠️ DOA device not detected via USB");
+        return null;
+      }
+
       // Try Python script first (more reliable)
       const pythonResult = await this.readDOAViaPython();
       if (pythonResult !== null) {
@@ -62,7 +82,7 @@ export class DOAService {
       // Fallback to Node.js USB
       return await this.readDOAViaNodeUSB();
     } catch (error: any) {
-      logger.error(`❌ Error reading DOA angle: ${error?.message || error}`);
+      logger.debug(`⚠️ Error reading DOA angle: ${error?.message || error}`);
       return null;
     }
   }
@@ -76,7 +96,7 @@ export class DOAService {
       const foundDevice = devices.find(
         (d) =>
           d.deviceDescriptor.idVendor === RESPEAKER_VENDOR_ID &&
-          d.deviceDescriptor.idProduct === RESPEAKER_PRODUCT_ID
+          d.deviceDescriptor.idProduct === RESPEAKER_PRODUCT_ID,
       );
 
       if (!foundDevice) {
@@ -132,7 +152,7 @@ export class DOAService {
                 }
                 resolve(null);
               }
-            }
+            },
           );
         } catch {
           resolve(null);
@@ -159,7 +179,8 @@ export class DOAService {
       return null;
     }
 
-    const doaLibPath = '/opt/usb_4_mic_array';
+    const homeDir = homedir();
+    const doaLibPath = join(homeDir, "usb_4_mic_array");
 
     const pythonScript = `import sys
 import os
@@ -200,18 +221,38 @@ sys.exit(1)`;
     const tempFile = join(tmpdir(), `doa_read_${Date.now()}.py`);
     try {
       writeFileSync(tempFile, pythonScript);
-      const { stdout } = await execPromise(`python3 "${tempFile}"`);
+      const { stdout, stderr } = await execPromise(`python3 "${tempFile}"`);
       const angle = parseInt(stdout.trim(), 10);
       unlinkSync(tempFile);
 
       if (!isNaN(angle)) {
         return angle;
       }
-    } catch {
+    } catch (error: any) {
       try {
         unlinkSync(tempFile);
       } catch {
         // Ignore cleanup errors
+      }
+
+      // Extract error message from stderr if available
+      const errorMessage = error?.stderr || error?.message || String(error);
+
+      // Log specific error types
+      if (
+        errorMessage.includes("No such device") ||
+        errorMessage.includes("Errno 19")
+      ) {
+        logger.debug(
+          `⚠️ DOA device not available (may be disconnected or in use): ${errorMessage.trim()}`,
+        );
+      } else if (errorMessage.includes("Device not found")) {
+        logger.debug(`⚠️ DOA device not found: ${errorMessage.trim()}`);
+      } else if (errorMessage.includes("ERROR:")) {
+        logger.warn(`⚠️ DOA reading error: ${errorMessage.trim()}`);
+      } else {
+        // Only log unexpected errors at warn level
+        logger.debug(`⚠️ DOA reading failed: ${errorMessage.trim()}`);
       }
     }
 
@@ -223,7 +264,7 @@ sys.exit(1)`;
    */
   static async startDOAMonitoring(
     recordingStartTime: number,
-    samplingIntervalMs: number = 100
+    samplingIntervalMs: number = 100,
   ): Promise<void> {
     if (this.isMonitoring) {
       return;
@@ -234,7 +275,9 @@ sys.exit(1)`;
     this.recordingStartTime = recordingStartTime;
     this.recentAngles = []; // Reset smoothing buffer
 
-    logger.info(`📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`);
+    logger.info(
+      `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`,
+    );
 
     // Initial reading
     const initialAngle = await this.readDOAAngle();
@@ -244,11 +287,15 @@ sys.exit(1)`;
       const initialRelativeTime = initialTimestamp - this.recordingStartTime;
       const initialWindowStart = Math.max(
         0,
-        Math.floor(initialRelativeTime / samplingIntervalMs) * samplingIntervalMs
+        Math.floor(initialRelativeTime / samplingIntervalMs) *
+          samplingIntervalMs,
       );
       const initialWindowEnd = initialWindowStart + samplingIntervalMs;
       const initialMappedChannel = this.mapAngleToChannel(smoothedAngle);
-      const initialAccuracy = this.calculateAccuracy(smoothedAngle, initialMappedChannel);
+      const initialAccuracy = this.calculateAccuracy(
+        smoothedAngle,
+        initialMappedChannel,
+      );
 
       this.doaSegments.push({
         start: initialWindowStart,
@@ -268,7 +315,7 @@ sys.exit(1)`;
         const relativeTime = timestamp - this.recordingStartTime;
         const windowStart = Math.max(
           0,
-          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs
+          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs,
         );
         const windowEnd = windowStart + samplingIntervalMs;
         const mappedChannel = this.mapAngleToChannel(smoothedAngle);
@@ -299,7 +346,9 @@ sys.exit(1)`;
     const segments = [...this.doaSegments];
     this.doaSegments = [];
 
-    logger.info(`📡 DOA monitoring stopped. Collected ${segments.length} segments`);
+    logger.info(
+      `📡 DOA monitoring stopped. Collected ${segments.length} segments`,
+    );
     return segments;
   }
 
@@ -324,10 +373,13 @@ sys.exit(1)`;
     }
 
     // Convert to radians for circular mean calculation
-    const radians = this.recentAngles.map(a => (a * Math.PI) / 180);
+    const radians = this.recentAngles.map((a) => (a * Math.PI) / 180);
     const sinSum = radians.reduce((sum, r) => sum + Math.sin(r), 0);
     const cosSum = radians.reduce((sum, r) => sum + Math.cos(r), 0);
-    const meanRad = Math.atan2(sinSum / radians.length, cosSum / radians.length);
+    const meanRad = Math.atan2(
+      sinSum / radians.length,
+      cosSum / radians.length,
+    );
     const meanDeg = (meanRad * 180) / Math.PI;
 
     return ((meanDeg % 360) + 360) % 360;
@@ -336,12 +388,12 @@ sys.exit(1)`;
   /**
    * Map DOA angle to channel using 90° quadrants
    * Maps to 4 directional channels (1-4 in hardware, represented as 1-4 for output)
-   * 
+   *
    * According to ReSpeaker USB Mic Array documentation:
    * - Channels 1-4: 4 raw directional microphones (USED)
    * - Channel 0: Processed audio (EXCLUDED - may include background/noise)
    * - Channel 5: Playback/reference (EXCLUDED - not a microphone)
-   * 
+   *
    * Channel mapping (0-based hardware → 1-based output):
    * - Hardware channel 1 → Output channel 1 (0-90° quadrant)
    * - Hardware channel 2 → Output channel 2 (90-180° quadrant)
@@ -351,8 +403,8 @@ sys.exit(1)`;
   private static mapAngleToChannel(angle: number): number {
     const normalizedAngle = ((angle % 360) + 360) % 360;
     // Map to directional channels 1-4 (hardware channels 1-4, raw microphone data)
-    if (normalizedAngle >= 0 && normalizedAngle < 90) return 1;   // Hardware channel 1 (raw mic 1)
-    if (normalizedAngle >= 90 && normalizedAngle < 180) return 2;  // Hardware channel 2 (raw mic 2)
+    if (normalizedAngle >= 0 && normalizedAngle < 90) return 1; // Hardware channel 1 (raw mic 1)
+    if (normalizedAngle >= 90 && normalizedAngle < 180) return 2; // Hardware channel 2 (raw mic 2)
     if (normalizedAngle >= 180 && normalizedAngle < 270) return 3; // Hardware channel 3 (raw mic 3)
     if (normalizedAngle >= 270 && normalizedAngle < 360) return 4; // Hardware channel 4 (raw mic 4)
     return 1;
@@ -390,7 +442,7 @@ sys.exit(1)`;
    */
   private static mergeConsecutiveSegments(
     segments: DOASegment[],
-    minSegmentDuration: number = 200
+    minSegmentDuration: number = 200,
   ): DOASegment[] {
     if (segments.length === 0) return [];
 
@@ -444,7 +496,7 @@ sys.exit(1)`;
   static generateDOAJsonFile(
     segments: DOASegment[],
     recordingId: string,
-    recordingDir: string
+    recordingDir: string,
   ): string {
     // Merge consecutive segments
     const merged = this.mergeConsecutiveSegments(segments);
@@ -482,4 +534,3 @@ sys.exit(1)`;
     return jsonFilePath;
   }
 }
-

@@ -1,4 +1,4 @@
-import os from "os";
+import os, { homedir } from "os";
 import osu from "os-utils";
 import si from "systeminformation";
 import dotenv from "dotenv";
@@ -19,6 +19,7 @@ import dayjs from "dayjs";
 import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
 import { RecordingService } from "./recordingsService";
+import { join } from "path";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -636,23 +637,39 @@ export class SystemService {
       }
     }
 
-    const doaLibPath = "/opt/usb_4_mic_array";
+    const homeDir = homedir();
+    const doaLibPath = join(homeDir, "usb_4_mic_array");
+
     try {
-      logger.info(`🔍 Checking for ReSpeaker USB Mic Array library at ${doaLibPath}...`);
-      await execPromise(`test -d "${doaLibPath}" && test -f "${doaLibPath}/tuning.py"`);
+      logger.info(
+        `🔍 Checking for ReSpeaker USB Mic Array library at ${doaLibPath}...`,
+      );
+      await execPromise(
+        `test -d "${doaLibPath}" && test -f "${doaLibPath}/tuning.py"`,
+      );
       logger.info("✅ ReSpeaker USB Mic Array library is already installed.");
     } catch {
-      logger.warn("⚠️ ReSpeaker USB Mic Array library not found. Installing...");
+      logger.warn(
+        "⚠️ ReSpeaker USB Mic Array library not found. Installing...",
+      );
       try {
         await execPromise("sudo apt install -y git");
         await execPromise(`sudo mkdir -p "$(dirname "${doaLibPath}")"`);
         await execPromise(`sudo rm -rf "${doaLibPath}"`);
-        await execPromise(
-          `sudo git clone https://github.com/respeaker/usb_audio_mic_array.git "${doaLibPath}"`
+
+        await git.clone(
+          "https://github.com/respeaker/usb_4_mic_array.git",
+          doaLibPath,
         );
-        logger.info("✅ ReSpeaker USB Mic Array library installed successfully.");
+
+        logger.info(
+          "✅ ReSpeaker USB Mic Array library installed successfully.",
+        );
       } catch (installErr) {
-        logger.error("❌ Failed to install ReSpeaker USB Mic Array library:", installErr);
+        logger.error(
+          "❌ Failed to install ReSpeaker USB Mic Array library:",
+          installErr,
+        );
         return;
       }
     }

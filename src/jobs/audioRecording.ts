@@ -107,27 +107,21 @@ export const startRecording = async () => {
 
     if (!doaJsonFilePath) {
       logger.error(
-        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}`
+        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}`,
       );
       return;
     }
 
-    RecordingService.convertAndUploadToServer(
-      rawFile,
-      doaJsonFilePath
-    );
-
+    RecordingService.convertAndUploadToServer(rawFile, doaJsonFilePath);
   });
 
   micInputStream.on("stopComplete", async () => {
     recordingSession = false;
     logger.info(`✅ Finished recording: ${getFileName(rawFile)}`);
-
   });
 
   micInstance.start();
 };
-
 
 const stopAndGenerateDOAJson = async (rawFile: string) => {
   // Stop DOA monitoring and get segments
@@ -140,7 +134,7 @@ const stopAndGenerateDOAJson = async (rawFile: string) => {
     doaJsonFilePath = DOAService.generateDOAJsonFile(
       doaSegments,
       recordingId,
-      RECORDING_DIR
+      RECORDING_DIR,
     );
   }
 
@@ -199,7 +193,7 @@ const handleInterruptedFiles = async () => {
       const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
       if (!fs.existsSync(jsonFilePath)) {
         logger.error(
-          `❌ DOA JSON file not found for interrupted recording: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`
+          `❌ DOA JSON file not found for interrupted recording: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`,
         );
       }
     });
@@ -210,12 +204,12 @@ const handleInterruptedFiles = async () => {
       const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
 
       logger.info(
-        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`
+        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
       );
 
       await RecordingService.convertAndUploadToServer(
         rawFilePath,
-        jsonFilePath
+        jsonFilePath,
       );
     });
 
@@ -235,7 +229,7 @@ const handleInterruptedFiles = async () => {
         // Check if DOA JSON file exists for interrupted MP3 recording
         if (!fs.existsSync(jsonFilePath)) {
           logger.error(
-            `❌ DOA JSON file not found for interrupted MP3 file: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`
+            `❌ DOA JSON file not found for interrupted MP3 file: ${getFileName(file)}. Expected: ${getFileName(jsonFilePath)}`,
           );
           continue;
         }
@@ -280,7 +274,9 @@ const runOnStart = async () => {
   try {
     await SystemService.installDOADependencies();
   } catch (err: any) {
-    logger.error(`⚠️ Failed to install DOA dependencies: ${err?.message || err}`);
+    logger.error(
+      `⚠️ Failed to install DOA dependencies: ${err?.message || err}`,
+    );
     // Continue anyway - DOA service has fallback mechanisms
   }
 
