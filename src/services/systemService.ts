@@ -284,6 +284,58 @@ export class SystemService {
     }
   }
 
+  /**
+   * Detect if the microphone is a ReSpeaker USB Mic Array (6-channel) or normal mic
+   * Simple binary: 6 channels if DOA capable, otherwise 1 channel
+   * @returns Object with mic type and channel count
+   */
+  static async detectMicType(): Promise<{
+    isMicArray: boolean;
+    channelCount: number;
+    isDOACapable: boolean;
+  }> {
+    try {
+      // Check USB vendor/product ID for ReSpeaker USB Mic Array (2886:0018)
+      const isDOACapable = await this.isReSpeakerMicArray();
+
+      // Simple binary: 6 channels if DOA capable, otherwise 1 channel
+      const channelCount = isDOACapable ? 6 : 1;
+      const isMicArray = isDOACapable;
+
+      logger.info(
+        `🎤 Mic Type Detection: ${isMicArray ? "6-Channel Array (DOA Enabled)" : "Normal Mic (1 channel, DOA Disabled)"}`,
+      );
+
+      return {
+        isMicArray,
+        channelCount,
+        isDOACapable,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Error detecting mic type: ${error?.message || error}. Defaulting to normal mic (1 channel).`,
+      );
+      // Default to normal mic on error
+      return {
+        isMicArray: false,
+        channelCount: 1,
+        isDOACapable: false,
+      };
+    }
+  }
+
+  /**
+   * Check if ReSpeaker USB Mic Array is connected (vendor:product = 2886:0018)
+   */
+  static async isReSpeakerMicArray(): Promise<boolean> {
+    try {
+      const { stdout } = await execPromise("lsusb");
+      return stdout.includes("2886:0018");
+    } catch {
+      return false;
+    }
+  }
+
   static async checkMicOnStart(isMicOn: boolean) {
     try {
       if (isMicOn) return;
@@ -685,7 +737,10 @@ export class SystemService {
           );
           logger.info("✅ Python 3 compatibility patch applied successfully.");
         } catch (patchErr) {
-          logger.warn("⚠️ Failed to apply Python 3 compatibility patch:", patchErr);
+          logger.warn(
+            "⚠️ Failed to apply Python 3 compatibility patch:",
+            patchErr,
+          );
           // Continue anyway - the error will be caught at runtime if needed
         }
       } catch (installErr) {

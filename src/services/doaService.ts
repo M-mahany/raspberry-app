@@ -510,7 +510,7 @@ sys.exit(1)`;
       segments: merged.map((seg) => ({
         start: seg.start / 1000, // Convert to seconds
         end: seg.end / 1000, // Convert to seconds
-        speaker: `speaker ${seg.channel}`, // Use actual angle instead of channel number
+        speaker: `speaker ${seg.channel}`,
         angle: Math.round(seg.angle * 10) / 10, // Actual DOA angle in degrees
         channel: seg.channel, // Channel mapping (1-4) for reference
         accuracy: seg.accuracy,

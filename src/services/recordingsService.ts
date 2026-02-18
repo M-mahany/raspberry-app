@@ -13,7 +13,7 @@ export class RecordingService {
    */
   static async deleteFilePair(
     audioFilePath: string,
-    jsonFilePath: string,
+    jsonFilePath: string | undefined,
     reason: string,
   ): Promise<void> {
     try {
@@ -26,7 +26,7 @@ export class RecordingService {
       }
 
       // Delete JSON file
-      if (fs.existsSync(jsonFilePath)) {
+      if (jsonFilePath && fs.existsSync(jsonFilePath)) {
         await fs.promises.unlink(jsonFilePath);
         logger.info(
           `🗑️ Deleted JSON file: ${getFileName(jsonFilePath)} (${reason})`,
@@ -40,22 +40,25 @@ export class RecordingService {
   }
   static async uploadRecording(
     filePath: string,
-    doaJsonFilePath: string,
+    doaJsonFilePath: string | undefined,
   ): Promise<void> {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
-      formData.append("hasDoa", "true"); // Indicates this is the new version with DOA data
 
-      // Add DOA JSON file (required)
-      if (!fs.existsSync(doaJsonFilePath)) {
-        throw new Error(`DOA JSON file not found: ${doaJsonFilePath}`);
+      if (doaJsonFilePath) {
+        // Add DOA JSON file (required)
+        if (!fs.existsSync(doaJsonFilePath)) {
+          throw new Error(`DOA JSON file not found: ${doaJsonFilePath}`);
+        }
+
+        formData.append("hasDoa", "true"); // Indicates this is the new version with DOA data
+        formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
+        logger.info(
+          `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`,
+        );
       }
-      formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
-      logger.info(
-        `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`,
-      );
 
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
@@ -103,7 +106,7 @@ export class RecordingService {
 
   static async convertAndUploadToServer(
     rawFile: string,
-    doaJsonFilePath: string,
+    doaJsonFilePath: string | undefined,
   ) {
     try {
       const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
@@ -182,7 +185,8 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${error.message || error
+          `🚨 Error checking for existing arecord processes: ${
+            error.message || error
           }`,
         );
       }

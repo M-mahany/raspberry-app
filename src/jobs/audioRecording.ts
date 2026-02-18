@@ -37,14 +37,22 @@ let micHealthIntervalActive: NodeJS.Timeout | null = null;
 let isMicInterrupted = false;
 export let isMicActive = false;
 
+export let micInfo = {
+  isMicArray: false,
+  channelCount: 1,
+  isDOACapable: false,
+};
+
 // MIC AUDIO OPTIONS
-const micOptions: MicOptions = {
-  rate: "16000",
-  channels: "6",
-  bitwidth: "16",
-  encoding: "signed-integer",
-  fileType: "raw",
-  debug: true,
+const getMicOptions = (channelCount: number): MicOptions => {
+  return {
+    rate: "16000",
+    channels: channelCount.toString(),
+    bitwidth: "16",
+    encoding: "signed-integer",
+    fileType: "raw",
+    debug: true,
+  };
 };
 
 export const startRecording = async () => {
@@ -56,6 +64,14 @@ export const startRecording = async () => {
   }
 
   isMicInterrupted = false;
+
+  micInfo = await SystemService.detectMicType();
+
+  const micOptions = getMicOptions(micInfo.channelCount);
+
+  logger.info(
+    `🎤 Starting recording with ${micInfo.isMicArray ? "6-channel mic array" : "normal mic"} (${micInfo.channelCount} channels)`,
+  );
 
   await SystemService.checkMicOnStart(isMicActive);
 
@@ -95,32 +111,41 @@ export const startRecording = async () => {
     // Start DOA monitoring on first data event
     if (!doaMonitoringStarted) {
       doaMonitoringStarted = true;
-      await DOAService.startDOAMonitoring(recordingStartTime, 100);
+      if (micInfo.isDOACapable) {
+        logger.info("📡 Starting DOA monitoring for 6-channel mic array");
+        await DOAService.startDOAMonitoring(recordingStartTime, 100);
+      } else {
+        logger.info("ℹ️ DOA monitoring disabled - normal mic detected");
+      }
     }
   });
 
   outputFileStream.once("finish", async () => {
     logger.info(`📁 Output file stream closed: ${rawFile}`);
 
-    // Stop DOA monitoring and generate JSON file (normal completion)
-    const doaJsonFilePath = await stopAndGenerateDOAJson(rawFile);
+    let doaJsonFilePath: string | undefined;
+    if (micInfo.isDOACapable) {
+      logger.info("📡 Stopping DOA monitoring for 6-channel mic array");
+      // Stop DOA monitoring and generate JSON file (normal completion)
+      doaJsonFilePath = await stopAndGenerateDOAJson(rawFile);
 
-    if (!doaJsonFilePath) {
-      logger.error(
-        `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}. Deleting invalid recording.`,
-      );
-      // Delete the raw file since it doesn't have a JSON file (invalid)
-      try {
-        await fs.unlink(rawFile);
-        logger.info(
-          `🗑️ Deleted recording without JSON DOA: ${getFileName(rawFile)}`,
-        );
-      } catch (err: any) {
+      if (!doaJsonFilePath) {
         logger.error(
-          `🚨 Error deleting invalid recording: ${err?.message || err}`,
+          `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}. Deleting invalid recording.`,
         );
+        // Delete the raw file since it doesn't have a JSON file (invalid)
+        try {
+          await fs.unlink(rawFile);
+          logger.info(
+            `🗑️ Deleted recording without JSON DOA: ${getFileName(rawFile)}`,
+          );
+        } catch (err: any) {
+          logger.error(
+            `🚨 Error deleting invalid recording: ${err?.message || err}`,
+          );
+        }
+        return;
       }
-      return;
     }
 
     RecordingService.convertAndUploadToServer(rawFile, doaJsonFilePath);
@@ -174,7 +199,6 @@ export const restartRecording = async () => {
 
   setTimeout(() => startRecording(), 1000);
 };
-
 
 const handleInterruptedFiles = async () => {
   try {
@@ -314,7 +338,12 @@ const handleInterruptedFiles = async () => {
         await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
       }
     }
-    if (!filteredMp3Files?.length && !filteredRawFiles?.length && !filesToDelete.length && !orphanedJsonFiles.length) {
+    if (
+      !filteredMp3Files?.length &&
+      !filteredRawFiles?.length &&
+      !filesToDelete.length &&
+      !orphanedJsonFiles.length
+    ) {
       logger.info("✅ Checking complete! No Interrupted files found");
     }
   } catch (err) {
