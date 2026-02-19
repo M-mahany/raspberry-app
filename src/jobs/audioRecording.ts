@@ -383,7 +383,7 @@ const runOnStart = async () => {
   startRecording(); // Start recording first
   scheduleNextRestart();
   await handleInterruptedFiles(); // Run it immediately once
-  // SystemService.checkForUpdates(); // check for updates after all interrupted file handled to avoid interruption
+  SystemService.checkForUpdates(); // check for updates after all interrupted file handled to avoid interruption
 };
 
 runOnStart();
