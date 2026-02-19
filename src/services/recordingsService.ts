@@ -109,7 +109,12 @@ export class RecordingService {
     doaJsonFilePath: string | undefined,
   ) {
     try {
-      const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
+      // Determine channel count: 6 channels if DOA JSON exists (ReSpeaker mic array), otherwise 1 channel (normal mic)
+      const channelCount = doaJsonFilePath ? 6 : 1;
+      const mp3File = await ffmpegService.convertAudioToMp3(
+        rawFile,
+        channelCount,
+      );
       if (mp3File) {
         logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
         // uploadRecording handles deletion of mp3File and doaJsonFilePath on success/error

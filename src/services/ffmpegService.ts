@@ -13,7 +13,7 @@ interface MetadataMedia {
 }
 
 export class ffmpegService {
-  static async convertAudioToMp3(rawFile: string) {
+  static async convertAudioToMp3(rawFile: string, channelCount: number = 1) {
     const mp3File = rawFile.replace(".raw", ".mp3");
     try {
       // Validate media file
@@ -25,30 +25,50 @@ export class ffmpegService {
         return null;
       }
       // Convert to MP3 using ffmpeg
-      // Reference: https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/
-      // 6-channel firmware layout:
-      // - Channel 0: Processed audio for ASR (beamformed, noise-suppressed) ← USING THIS (best for transcription)
-      // - Channels 1-4: 4 microphones' raw data (raw directional mics)
-      // - Channel 5: Playback/reference channel
+      const isMultiChannel = channelCount > 1;
+
+      // Build input options based on channel count
+      const inputOptions: string[] = [
+        "-f",
+        "s16le", // Signed 16-bit little-endian
+        "-ar",
+        "16000", // Sample rate 16kHz
+      ];
+
+      if (isMultiChannel) {
+        // For 6-channel ReSpeaker USB Mic Array
+        // Reference: https://wiki.seeedstudio.com/ReSpeaker-USB-Mic-Array/
+        // 6-channel firmware layout:
+        // - Channel 0: Processed audio for ASR (beamformed, noise-suppressed) ← USING THIS (best for transcription)
+        // - Channels 1-4: 4 microphones' raw data (raw directional mics)
+        // - Channel 5: Playback/reference channel
+        inputOptions.push("-ac", channelCount.toString());
+      } else {
+        // For single-channel (normal mic)
+        inputOptions.push("-ac", "1");
+      }
+
+      // Build output options
+      const outputOptions: string[] = [
+        "-ac",
+        "1", // Output mono
+        "-ar",
+        "16000", // Maintain 16kHz sample rate
+      ];
+
+      // Only map channel 0 for multi-channel recordings
+      if (isMultiChannel) {
+        outputOptions.unshift(
+          "-map_channel",
+          "0.0.0", // Map channel 0 (processed audio - beamformed, noise-suppressed, optimized for ASR)
+        );
+      }
+
       return await new Promise<string | void>((resolve, reject) => {
         ffmpeg()
           .input(rawFile)
-          .inputOptions([
-            "-f",
-            "s16le", // Signed 16-bit little-endian
-            "-ar",
-            "16000", // Sample rate 16kHz
-            "-ac",
-            "6", // 6 input channels (ReSpeaker USB Mic Array)
-          ])
-          .outputOptions([
-            "-map_channel",
-            "0.0.0", // Map channel 0 (processed audio - beamformed, noise-suppressed, optimized for ASR)
-            "-ac",
-            "1", // Output mono
-            "-ar",
-            "16000", // Maintain 16kHz sample rate
-          ])
+          .inputOptions(inputOptions)
+          .outputOptions(outputOptions)
           .audioCodec("libmp3lame")
           .format("mp3")
           .on("end", async () => {
