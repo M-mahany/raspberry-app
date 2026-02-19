@@ -51,15 +51,15 @@ export class DOAService {
   /**
    * Check if DOA device is available
    */
-  static async isDOADeviceAvailable(): Promise<boolean> {
-    try {
-      // Check if device exists using lsusb (vendor:product = 2886:0018)
-      const { stdout } = await execPromise("lsusb");
-      return stdout.includes("2886:0018");
-    } catch {
-      return false;
-    }
-  }
+  // static async isDOADeviceAvailable(): Promise<boolean> {
+  //   try {
+  //     // Check if device exists using lsusb (vendor:product = 2886:0018)
+  //     const { stdout } = await execPromise("lsusb");
+  //     return stdout.includes("2886:0018");
+  //   } catch {
+  //     return false;
+  //   }
+  // }
 
   /**
    * Read DOA angle from ReSpeaker USB Mic Array
@@ -67,11 +67,11 @@ export class DOAService {
   static async readDOAAngle(): Promise<number | null> {
     try {
       // Check if device is available first
-      const isAvailable = await this.isDOADeviceAvailable();
-      if (!isAvailable) {
-        logger.debug("⚠️ DOA device not detected via USB");
-        return null;
-      }
+      // const isAvailable = await this.isDOADeviceAvailable();
+      // if (!isAvailable) {
+      //   logger.debug("⚠️ DOA device not detected via USB");
+      //   return null;
+      // }
 
       // Try Python script first (more reliable)
       const pythonResult = await this.readDOAViaPython();
@@ -278,70 +278,52 @@ sys.exit(1)`;
     logger.info(
       `📡 Starting DOA monitoring (sampling every ${samplingIntervalMs}ms)`,
     );
-
-    // Initial reading
-    const initialAngle = await this.readDOAAngle();
-    if (initialAngle !== null) {
-      const smoothedAngle = this.smoothAngle(initialAngle);
-      const initialTimestamp = Date.now();
-      const initialRelativeTime = initialTimestamp - this.recordingStartTime;
-      const initialWindowStart = Math.max(
-        0,
-        Math.floor(initialRelativeTime / samplingIntervalMs) *
-          samplingIntervalMs,
-      );
-      const initialWindowEnd = initialWindowStart + samplingIntervalMs;
-      const initialMappedChannel = this.mapAngleToChannel(smoothedAngle);
-      const initialAccuracy = this.calculateAccuracy(
-        smoothedAngle,
-        initialMappedChannel,
-      );
-
-      this.doaSegments.push({
-        start: initialWindowStart,
-        end: initialWindowEnd,
-        channel: initialMappedChannel,
-        angle: smoothedAngle,
-        accuracy: initialAccuracy,
-      });
-    }
-
     // Periodic readings
-    this.doaMonitoringInterval = setInterval(async () => {
-      const angle = await this.readDOAAngle();
-      if (angle !== null) {
-        const smoothedAngle = this.smoothAngle(angle);
-        const timestamp = Date.now();
-        const relativeTime = timestamp - this.recordingStartTime;
-        const windowStart = Math.max(
-          0,
-          Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs,
-        );
-        const windowEnd = windowStart + samplingIntervalMs;
-        const mappedChannel = this.mapAngleToChannel(smoothedAngle);
-        const accuracy = this.calculateAccuracy(smoothedAngle, mappedChannel);
+    const loop = async () => {
+      if (!this.isMonitoring) return;
 
-        this.doaSegments.push({
-          start: windowStart,
-          end: windowEnd,
-          channel: mappedChannel,
-          angle: smoothedAngle,
-          accuracy: accuracy,
-        });
+      try {
+        const angle = await this.readDOAAngle();
+        if (angle !== null) {
+          const smoothedAngle = this.smoothAngle(angle);
+          const timestamp = Date.now();
+          const relativeTime = timestamp - this.recordingStartTime;
+          const windowStart = Math.max(
+            0,
+            Math.floor(relativeTime / samplingIntervalMs) * samplingIntervalMs,
+          );
+          const windowEnd = windowStart + samplingIntervalMs;
+          const mappedChannel = this.mapAngleToChannel(smoothedAngle);
+          const accuracy = this.calculateAccuracy(smoothedAngle, mappedChannel);
+
+          this.doaSegments.push({
+            start: windowStart,
+            end: windowEnd,
+            channel: mappedChannel,
+            angle: smoothedAngle,
+            accuracy: accuracy,
+          });
+        }
+      } catch (error: any) {
+        logger.error(`⚠️ Error reading DOA angle: ${error?.message || error}`);
       }
-    }, samplingIntervalMs);
+      // Schedule next run ONLY if still monitoring
+      this.doaMonitoringInterval = setTimeout(loop, samplingIntervalMs);
+    };
+
+    loop();
   }
 
   /**
    * Stop DOA monitoring and return segments
    */
   static stopDOAMonitoring(): DOASegment[] {
+    this.isMonitoring = false;
+
     if (this.doaMonitoringInterval) {
-      clearInterval(this.doaMonitoringInterval);
+      clearTimeout(this.doaMonitoringInterval);
       this.doaMonitoringInterval = null;
     }
-
-    this.isMonitoring = false;
 
     const segments = [...this.doaSegments];
     this.doaSegments = [];
