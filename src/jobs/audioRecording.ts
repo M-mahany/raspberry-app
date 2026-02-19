@@ -131,20 +131,20 @@ export const startRecording = async () => {
 
       if (!doaJsonFilePath) {
         logger.error(
-          `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}. Deleting invalid recording.`,
+          `❌ DOA JSON file not generated for recording: ${getFileName(rawFile)}. will be processed as normal recording`,
         );
         // Delete the raw file since it doesn't have a JSON file (invalid)
-        try {
-          await fs.unlink(rawFile);
-          logger.info(
-            `🗑️ Deleted recording without JSON DOA: ${getFileName(rawFile)}`,
-          );
-        } catch (err: any) {
-          logger.error(
-            `🚨 Error deleting invalid recording: ${err?.message || err}`,
-          );
-        }
-        return;
+        // try {
+        //   await fs.unlink(rawFile);
+        //   logger.info(
+        //     `🗑️ Deleted recording without JSON DOA: ${getFileName(rawFile)}`,
+        //   );
+        // } catch (err: any) {
+        //   logger.error(
+        //     `🚨 Error deleting invalid recording: ${err?.message || err}`,
+        //   );
+        // }
+        // return;
       }
     }
 
@@ -203,8 +203,8 @@ export const restartRecording = async () => {
 const handleInterruptedFiles = async () => {
   try {
     // Detect mic type first (in case this runs before startRecording sets micInfo)
-    const currentMicInfo = await SystemService.detectMicType();
-    const isDOACapable = currentMicInfo.isDOACapable;
+    // const currentMicInfo = await SystemService.detectMicType();
+    // const isDOACapable = currentMicInfo.isDOACapable;
 
     const files = await fs.readdir(RECORDING_DIR);
     logger.info("🔄 Cheking Interupted files...");
@@ -224,33 +224,34 @@ const handleInterruptedFiles = async () => {
     // For normal mics, recordings don't have JSON files and should be processed normally
     const filesToDelete: Array<{ file: string; type: "raw" | "mp3" }> = [];
 
-    if (isDOACapable) {
-      // For DOA-capable mics: find audio files that don't have corresponding JSON files (invalid - should be deleted)
-      filteredRawFiles.forEach((file) => {
-        const recordingId = path.basename(file, ".raw");
-        const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-        if (!fs.existsSync(jsonFilePath)) {
-          filesToDelete.push({ file, type: "raw" });
-          logger.warn(
-            `⚠️ Raw file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
-          );
-        }
-      });
+    // if (isDOACapable) {
+    //   // For DOA-capable mics: find audio files that don't have corresponding JSON files (invalid - should be deleted)
+    //   filteredRawFiles.forEach((file) => {
+    //     const recordingId = path.basename(file, ".raw");
+    //     const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+    //     if (!fs.existsSync(jsonFilePath)) {
+    //       filesToDelete.push({ file, type: "raw" });
+    //       logger.warn(
+    //         `⚠️ Raw file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
+    //       );
+    //     }
+    //   });
 
-      filteredMp3Files.forEach((file) => {
-        const recordingId = path.basename(file, ".mp3");
-        const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-        if (!fs.existsSync(jsonFilePath)) {
-          filesToDelete.push({ file, type: "mp3" });
-          logger.warn(
-            `⚠️ MP3 file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
-          );
-        }
-      });
-    }
+    //   filteredMp3Files.forEach((file) => {
+    //     const recordingId = path.basename(file, ".mp3");
+    //     const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+    //     if (!fs.existsSync(jsonFilePath)) {
+    //       filesToDelete.push({ file, type: "mp3" });
+    //       logger.warn(
+    //         `⚠️ MP3 file missing JSON DOA file: ${getFileName(file)}. Will be deleted.`,
+    //       );
+    //     }
+    //   });
+    // }
 
     // Find and delete orphaned JSON files (JSON files without corresponding audio files)
     // Always clean up orphaned JSON files regardless of mic type
+
     const jsonFiles = files.filter((file) => path.extname(file) === ".json");
     const orphanedJsonFiles: string[] = [];
     jsonFiles.forEach((file) => {
@@ -301,89 +302,97 @@ const handleInterruptedFiles = async () => {
     }
 
     // Process raw files
-    if (isDOACapable) {
-      // For DOA-capable mics: only process raw files that have corresponding JSON files
-      const rawFilesWithJson = filteredRawFiles.filter((file) => {
-        const recordingId = path.basename(file, ".raw");
-        const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-        return fs.existsSync(jsonFilePath);
-      });
+    // if (isDOACapable) {
+    //   // For DOA-capable mics: only process raw files that have corresponding JSON files
+    //   const rawFilesWithJson = filteredRawFiles.filter((file) => {
+    //     const recordingId = path.basename(file, ".raw");
+    //     const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+    //     return fs.existsSync(jsonFilePath);
+    //   });
 
-      const conversionPromises = rawFilesWithJson.map(async (file) => {
-        const rawFilePath = path.join(RECORDING_DIR, file);
-        const recordingId = path.basename(file, ".raw");
-        const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+    //   const conversionPromises = rawFilesWithJson.map(async (file) => {
+    //     const rawFilePath = path.join(RECORDING_DIR, file);
+    //     const recordingId = path.basename(file, ".raw");
+    //     const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
 
-        logger.info(
-          `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
-        );
+    //     logger.info(
+    //       `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
+    //     );
 
-        // convertAndUploadToServer already handles file deletion on success/error
-        await RecordingService.convertAndUploadToServer(
-          rawFilePath,
-          jsonFilePath,
-        );
-      });
+    //     // convertAndUploadToServer already handles file deletion on success/error
+    //     await RecordingService.convertAndUploadToServer(
+    //       rawFilePath,
+    //       jsonFilePath,
+    //     );
+    //   });
 
-      if (rawFilesWithJson?.length) {
-        await Promise.all(conversionPromises);
-      }
-    } else {
-      // For normal mics: process all raw files (no JSON required)
-      const conversionPromises = filteredRawFiles.map(async (file) => {
-        const rawFilePath = path.join(RECORDING_DIR, file);
+    //   if (rawFilesWithJson?.length) {
+    //     await Promise.all(conversionPromises);
+    //   }
+    // } else {
+    // For normal mics: process all raw files (no JSON required)
 
-        logger.info(
-          `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
-        );
+    const conversionPromises = filteredRawFiles.map(async (file) => {
+      const rawFilePath = path.join(RECORDING_DIR, file);
+      const recordingId = path.basename(file, ".raw");
+      const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
 
-        // convertAndUploadToServer already handles file deletion on success/error
-        // Pass undefined for JSON file path since normal mics don't have DOA data
-        await RecordingService.convertAndUploadToServer(rawFilePath, undefined);
-      });
+      logger.info(
+        `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
+      );
 
-      if (filteredRawFiles?.length) {
-        await Promise.all(conversionPromises);
-      }
+      // convertAndUploadToServer already handles file deletion on success/error
+      // Pass undefined for JSON file path since normal mics don't have DOA data
+      await RecordingService.convertAndUploadToServer(
+        rawFilePath,
+        jsonFilePath,
+      );
+    });
+
+    if (filteredRawFiles?.length) {
+      await Promise.all(conversionPromises);
     }
+    // }
 
     // Process MP3 files
-    if (isDOACapable) {
-      // For DOA-capable mics: only process MP3 files that have corresponding JSON files
-      const mp3FilesWithJson = filteredMp3Files.filter((file) => {
+    // if (isDOACapable) {
+    //   // For DOA-capable mics: only process MP3 files that have corresponding JSON files
+    //   const mp3FilesWithJson = filteredMp3Files.filter((file) => {
+    //     const recordingId = path.basename(file, ".mp3");
+    //     const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+    //     return fs.existsSync(jsonFilePath);
+    //   });
+
+    //   if (mp3FilesWithJson?.length) {
+    //     for (const file of mp3FilesWithJson) {
+    //       logger.info(
+    //         `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
+    //       );
+    //       const mp3FilePath = path.join(RECORDING_DIR, file);
+    //       const recordingId = path.basename(file, ".mp3");
+    //       const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
+
+    //       // uploadRecording already handles file deletion on success/error
+    //       await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
+    //     }
+    //   }
+    // } else {
+    // For normal mics: process all MP3 files (no JSON required)
+    if (filteredMp3Files?.length) {
+      for (const file of filteredMp3Files) {
+        logger.info(
+          `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
+        );
+        const mp3FilePath = path.join(RECORDING_DIR, file);
         const recordingId = path.basename(file, ".mp3");
         const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-        return fs.existsSync(jsonFilePath);
-      });
 
-      if (mp3FilesWithJson?.length) {
-        for (const file of mp3FilesWithJson) {
-          logger.info(
-            `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
-          );
-          const mp3FilePath = path.join(RECORDING_DIR, file);
-          const recordingId = path.basename(file, ".mp3");
-          const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
-
-          // uploadRecording already handles file deletion on success/error
-          await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
-        }
-      }
-    } else {
-      // For normal mics: process all MP3 files (no JSON required)
-      if (filteredMp3Files?.length) {
-        for (const file of filteredMp3Files) {
-          logger.info(
-            `⬆️ Uploading interrupted file: ${getFileName(file)} to server...`,
-          );
-          const mp3FilePath = path.join(RECORDING_DIR, file);
-
-          // uploadRecording already handles file deletion on success/error
-          // Pass undefined for JSON file path since normal mics don't have DOA data
-          await RecordingService.uploadRecording(mp3FilePath, undefined);
-        }
+        // uploadRecording already handles file deletion on success/error
+        // Pass undefined for JSON file path since normal mics don't have DOA data
+        await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
       }
     }
+    // }
 
     if (
       !filteredMp3Files?.length &&
