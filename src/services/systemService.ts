@@ -1,4 +1,4 @@
-import os from "os";
+import os, { homedir } from "os";
 import osu from "os-utils";
 import si from "systeminformation";
 import dotenv from "dotenv";
@@ -19,6 +19,7 @@ import dayjs from "dayjs";
 import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
 import { RecordingService } from "./recordingsService";
+import { join } from "path";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -280,6 +281,58 @@ export class SystemService {
     } catch (err) {
       logger.error("Failed to get audio devices:", err);
       return null;
+    }
+  }
+
+  /**
+   * Detect if the microphone is a ReSpeaker USB Mic Array (6-channel) or normal mic
+   * Simple binary: 6 channels if DOA capable, otherwise 1 channel
+   * @returns Object with mic type and channel count
+   */
+  static async detectMicType(): Promise<{
+    isMicArray: boolean;
+    channelCount: number;
+    isDOACapable: boolean;
+  }> {
+    try {
+      // Check USB vendor/product ID for ReSpeaker USB Mic Array (2886:0018)
+      const isDOACapable = await this.isReSpeakerMicArray();
+
+      // Simple binary: 6 channels if DOA capable, otherwise 1 channel
+      const channelCount = isDOACapable ? 6 : 1;
+      const isMicArray = isDOACapable;
+
+      logger.info(
+        `🎤 Mic Type Detection: ${isMicArray ? "6-Channel Array (DOA Enabled)" : "Normal Mic (1 channel, DOA Disabled)"}`,
+      );
+
+      return {
+        isMicArray,
+        channelCount,
+        isDOACapable,
+      };
+    } catch (error: any) {
+      logger.error(
+        `Error detecting mic type: ${error?.message || error}. Defaulting to normal mic (1 channel).`,
+      );
+      // Default to normal mic on error
+      return {
+        isMicArray: false,
+        channelCount: 1,
+        isDOACapable: false,
+      };
+    }
+  }
+
+  /**
+   * Check if ReSpeaker USB Mic Array is connected (vendor:product = 2886:0018)
+   */
+  static async isReSpeakerMicArray(): Promise<boolean> {
+    try {
+      const { stdout } = await execPromise("lsusb");
+      return stdout.includes("2886:0018");
+    } catch {
+      return false;
     }
   }
 
@@ -586,6 +639,120 @@ export class SystemService {
     } catch (cycleErr) {
       logger.error("❌ Failed to cycle USB ports:", cycleErr);
     }
+  }
+
+  // Install DOA dependencies (Python3, pyusb, ReSpeaker USB Mic Array library)
+  static async installDOADependencies() {
+    try {
+      logger.info("🔍 Checking for Python3...");
+      await execPromise("which python3");
+      logger.info("✅ Python3 is already installed.");
+    } catch {
+      logger.warn("⚠️ Python3 not found. Installing...");
+      try {
+        await execPromise("sudo apt update");
+        await execPromise("sudo apt install -y python3 python3-pip");
+        logger.info("✅ Python3 installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install Python3:", installErr);
+        return;
+      }
+    }
+
+    try {
+      logger.info("🔍 Checking for pip3...");
+      await execPromise("which pip3");
+      logger.info("✅ pip3 is already installed.");
+    } catch {
+      logger.warn("⚠️ pip3 not found. Installing...");
+      try {
+        await execPromise("sudo apt install -y python3-pip");
+        logger.info("✅ pip3 installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install pip3:", installErr);
+        return;
+      }
+    }
+
+    try {
+      logger.info("🔍 Checking for pyusb...");
+      await execPromise("python3 -c 'import usb.core'");
+      logger.info("✅ pyusb is already installed.");
+    } catch {
+      logger.warn("⚠️ pyusb not found. Installing...");
+      try {
+        await execPromise("sudo pip3 install pyusb");
+        logger.info("✅ pyusb installed successfully.");
+      } catch (installErr) {
+        logger.error("❌ Failed to install pyusb:", installErr);
+        return;
+      }
+    }
+
+    const homeDir = homedir();
+    const doaLibPath = join(homeDir, "usb_4_mic_array");
+
+    try {
+      logger.info(
+        `🔍 Checking for ReSpeaker USB Mic Array library at ${doaLibPath}...`,
+      );
+      await execPromise(
+        `test -d "${doaLibPath}" && test -f "${doaLibPath}/tuning.py"`,
+      );
+      logger.info("✅ ReSpeaker USB Mic Array library is already installed.");
+    } catch {
+      logger.warn(
+        "⚠️ ReSpeaker USB Mic Array library not found. Installing...",
+      );
+      try {
+        // Check if git is installed, install if not
+        try {
+          await execPromise("which git");
+          logger.info("✅ Git is already installed.");
+        } catch {
+          logger.warn("⚠️ Git not found. Installing...");
+          await execPromise("sudo apt install -y git");
+          logger.info("✅ Git installed successfully.");
+        }
+
+        await execPromise(`sudo mkdir -p "$(dirname "${doaLibPath}")"`);
+        await execPromise(`sudo rm -rf "${doaLibPath}"`);
+
+        await git.clone(
+          "https://github.com/respeaker/usb_4_mic_array.git",
+          doaLibPath,
+        );
+
+        logger.info(
+          "✅ ReSpeaker USB Mic Array library installed successfully.",
+        );
+
+        // Apply Python 3 compatibility patch only after fresh installation
+        try {
+          logger.info("🔧 Applying Python 3 compatibility patch...");
+          // Patch all Python files in the library directory
+          // Replace various forms of tostring() with tobytes()
+          await execPromise(
+            `find "${doaLibPath}" -name "*.py" -type f -exec sed -i 's/\\.tostring()/\\.tobytes()/g; s/\\.tostring/\\.tobytes/g; s/array\\.array\\.tostring/array.array.tobytes/g' {} +`,
+          );
+          logger.info("✅ Python 3 compatibility patch applied successfully.");
+        } catch (patchErr) {
+          logger.warn(
+            "⚠️ Failed to apply Python 3 compatibility patch:",
+            patchErr,
+          );
+          // Continue anyway - the error will be caught at runtime if needed
+        }
+      } catch (installErr) {
+        logger.error(
+          "❌ Failed to install ReSpeaker USB Mic Array library:",
+          installErr,
+        );
+        return;
+      }
+    }
+
+    logger.info("✅ All DOA dependencies are installed and ready.");
   }
 
   static async realTimeUsbEventDetection() {

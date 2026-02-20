@@ -8,11 +8,58 @@ import { getFileName, getTimeZone } from "../utils/helpers";
 import { execSync } from "child_process";
 
 export class RecordingService {
-  static async uploadRecording(filePath: string): Promise<void> {
+  /**
+   * Delete both audio file and its corresponding JSON file as a pair
+   */
+  static async deleteFilePair(
+    audioFilePath: string,
+    jsonFilePath: string | undefined,
+    reason: string,
+  ): Promise<void> {
+    try {
+      // Delete audio file
+      if (fs.existsSync(audioFilePath)) {
+        await fs.promises.unlink(audioFilePath);
+        logger.info(
+          `🗑️ Deleted audio file: ${getFileName(audioFilePath)} (${reason})`,
+        );
+      }
+
+      // Delete JSON file
+      if (jsonFilePath && fs.existsSync(jsonFilePath)) {
+        await fs.promises.unlink(jsonFilePath);
+        logger.info(
+          `🗑️ Deleted JSON file: ${getFileName(jsonFilePath)} (${reason})`,
+        );
+      }
+    } catch (err: any) {
+      logger.error(
+        `🚨 Error deleting file pair (${reason}): ${err?.message || err}`,
+      );
+    }
+  }
+  static async uploadRecording(
+    filePath: string,
+    doaJsonFilePath: string | undefined,
+  ): Promise<void> {
     try {
       const formData = new FormData();
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
+
+      if (doaJsonFilePath) {
+        // Add DOA JSON file (required)
+        if (!fs.existsSync(doaJsonFilePath)) {
+          throw new Error(`DOA JSON file not found: ${doaJsonFilePath}`);
+        }
+
+        formData.append("hasDoa", "true"); // Indicates this is the new version with DOA data
+        formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
+        logger.info(
+          `📎 Attaching DOA JSON file: ${getFileName(doaJsonFilePath)}`,
+        );
+      }
+
       await serverAPI.post("/recordings/device-upload", formData, {
         headers: {
           ...formData.getHeaders(),
@@ -20,13 +67,11 @@ export class RecordingService {
       });
 
       logger.info(
-        `✅ Uploaded ${getFileName(filePath)} successfully to the server:`,
+        `✅ Uploaded ${getFileName(filePath)} successfully to the server`,
       );
-      fs.unlink(filePath, (err) => {
-        if (err) {
-          logger.error(`🚨 Error deleting file after upload: ${err}`);
-        }
-      });
+
+      // Delete both files after successful upload
+      await this.deleteFilePair(filePath, doaJsonFilePath, "successful upload");
     } catch (error: any) {
       if (
         isAxiosError(error) &&
@@ -34,16 +79,12 @@ export class RecordingService {
           "already exists for this recording.",
         )
       ) {
-        fs.unlink(filePath, (err) => {
-          logger.error(
-            `🚨File: ${getFileName(filePath)}, already uploaded to the server`,
-          );
-          if (err) {
-            logger.error(
-              `🚨 Error deleting file ${getFileName(filePath)} that has been already uploaded to server: ${err}`,
-            );
-          }
-        });
+        // File already uploaded - delete both files
+        await this.deleteFilePair(
+          filePath,
+          doaJsonFilePath,
+          "already uploaded to server",
+        );
       } else {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
@@ -52,33 +93,57 @@ export class RecordingService {
           isAxiosError(error) &&
           error?.response?.data?.message?.includes("Invalid media file")
         ) {
-          fs.unlink(filePath, (err) => {
-            if (err) {
-              logger.error(
-                `🚨 Error deleting file ${getFileName(filePath)} - ${err}`,
-              );
-            }
-          });
+          // Delete both files if media file is invalid (treat as pair)
+          await this.deleteFilePair(
+            filePath,
+            doaJsonFilePath,
+            "invalid media file",
+          );
         }
       }
     }
   }
+
   static async convertAndUploadToServer(
     rawFile: string,
-    currentRecordingFileSet?: Set<string>,
+    doaJsonFilePath: string | undefined,
   ) {
     try {
-      const mp3File = await ffmpegService.convertAudioToMp3(rawFile);
+      // Determine channel count: 6 channels if DOA JSON exists (ReSpeaker mic array), otherwise 1 channel (normal mic)
+      const channelCount = doaJsonFilePath ? 6 : 1;
+      const mp3File = await ffmpegService.convertAudioToMp3(
+        rawFile,
+        channelCount,
+      );
       if (mp3File) {
         logger.info(`⬆️ Uploading file: ${getFileName(mp3File)} to server...`);
-        await this.uploadRecording(mp3File);
+        // uploadRecording handles deletion of mp3File and doaJsonFilePath on success/error
+        await this.uploadRecording(mp3File, doaJsonFilePath);
+        // Delete raw file after successful upload (mp3 and JSON already deleted by uploadRecording)
+        if (fs.existsSync(rawFile)) {
+          try {
+            await fs.promises.unlink(rawFile);
+            logger.info(
+              `🗑️ Deleted raw file after successful conversion/upload: ${getFileName(rawFile)}`,
+            );
+          } catch (err: any) {
+            logger.error(
+              `🚨 Error deleting raw file after successful upload: ${err?.message || err}`,
+            );
+          }
+        }
+      } else {
+        // Conversion failed - delete both raw and JSON files
+        await this.deleteFilePair(
+          rawFile,
+          doaJsonFilePath,
+          "conversion failed",
+        );
+        throw new Error("Audio conversion failed - file may be corrupted");
       }
-      if (currentRecordingFileSet) {
-        currentRecordingFileSet?.delete(getFileName(rawFile));
-      }
-    } catch (error) {
+    } catch (error: any) {
       logger.error(
-        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error}`,
+        `🚨 Error Converting and uploading file:${getFileName(rawFile)}! ${error?.message || error}`,
       );
     }
   }

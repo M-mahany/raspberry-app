@@ -94,9 +94,9 @@ app.get("/shutdown", async (_req: Request, res: Response) => {
       .status(200)
       .json({ message: "Device will be shut down in 3 seconds..." });
   } catch (error: any) {
-    res
-      .status(500)
-      .json({ message: `Error shutting down device: ${error?.message || error}` });
+    res.status(500).json({
+      message: `Error shutting down device: ${error?.message || error}`,
+    });
   }
 });
 
@@ -158,7 +158,6 @@ app.get("/shutdown", async (_req: Request, res: Response) => {
 //     res.json({ username: stdout.trim() });
 //   });
 // });
-
 
 // app.get("/check_ssh", (_req, res) => {
 //   exec("nc -zv 127.0.0.1 22", (err, stdout, stderr) => {
