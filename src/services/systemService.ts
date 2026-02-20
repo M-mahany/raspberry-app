@@ -681,7 +681,7 @@ export class SystemService {
     } catch {
       logger.warn("⚠️ pyusb not found. Installing...");
       try {
-        await execPromise("sudo pip3 install pyusb");
+        await execPromise("sudo apt install -y python3-usb");
         logger.info("✅ pyusb installed successfully.");
       } catch (installErr) {
         logger.error("❌ Failed to install pyusb:", installErr);
