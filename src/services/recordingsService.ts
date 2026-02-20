@@ -89,6 +89,7 @@ export class RecordingService {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
         );
+        logger.error(`🚨 Error: ${error?.message || error}`);
         if (
           isAxiosError(error) &&
           error?.response?.data?.message?.includes("Invalid media file")
@@ -190,8 +191,7 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${
-            error.message || error
+          `🚨 Error checking for existing arecord processes: ${error.message || error
           }`,
         );
       }
