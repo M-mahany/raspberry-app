@@ -341,11 +341,13 @@ const handleInterruptedFiles = async () => {
         `🔄 Converting interrupted recording: ${getFileName(rawFilePath)}`,
       );
 
+      const jsonFileExists = fs.existsSync(jsonFilePath);
+
       // convertAndUploadToServer already handles file deletion on success/error
       // Pass undefined for JSON file path since normal mics don't have DOA data
       await RecordingService.convertAndUploadToServer(
         rawFilePath,
-        jsonFilePath,
+        jsonFileExists ? jsonFilePath : undefined,
       );
     });
 
@@ -387,9 +389,14 @@ const handleInterruptedFiles = async () => {
         const recordingId = path.basename(file, ".mp3");
         const jsonFilePath = path.join(RECORDING_DIR, `${recordingId}.json`);
 
+        const jsonFileExists = fs.existsSync(jsonFilePath);
+
         // uploadRecording already handles file deletion on success/error
         // Pass undefined for JSON file path since normal mics don't have DOA data
-        await RecordingService.uploadRecording(mp3FilePath, jsonFilePath);
+        await RecordingService.uploadRecording(
+          mp3FilePath,
+          jsonFileExists ? jsonFilePath : undefined,
+        );
       }
     }
     // }

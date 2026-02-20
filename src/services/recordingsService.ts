@@ -47,12 +47,8 @@ export class RecordingService {
       formData.append("mediaFile", fs.createReadStream(filePath));
       formData.append("timeZone", getTimeZone());
 
-      if (doaJsonFilePath) {
+      if (doaJsonFilePath && fs.existsSync(doaJsonFilePath)) {
         // Add DOA JSON file (required)
-        if (!fs.existsSync(doaJsonFilePath)) {
-          throw new Error(`DOA JSON file not found: ${doaJsonFilePath}`);
-        }
-
         formData.append("hasDoa", "true"); // Indicates this is the new version with DOA data
         formData.append("doaJsonFile", fs.createReadStream(doaJsonFilePath));
         logger.info(
@@ -89,7 +85,6 @@ export class RecordingService {
         logger.error(
           `🚨 Failed uploading file ${getFileName(filePath)} to server: ${JSON.stringify(isAxiosError(error) ? error.toJSON?.() || error : error)}`,
         );
-        logger.error(`🚨 Error: ${error?.message || error}`);
         if (
           isAxiosError(error) &&
           error?.response?.data?.message?.includes("Invalid media file")
@@ -191,7 +186,8 @@ export class RecordingService {
         logger.info("✅ No arecord process found.");
       } else {
         logger.error(
-          `🚨 Error checking for existing arecord processes: ${error.message || error
+          `🚨 Error checking for existing arecord processes: ${
+            error.message || error
           }`,
         );
       }
