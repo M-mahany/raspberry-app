@@ -219,12 +219,9 @@ while retry_count <= max_retries:
 sys.exit(1)`;
 
     const tempFile = join(tmpdir(), `doa_read_${Date.now()}.py`);
-    logger.info(`📄 Writing temporary Python script to: ${tempFile}`);
     try {
       writeFileSync(tempFile, pythonScript);
-      logger.info(`📄 Executing temporary Python script: ${tempFile}`);
       const { stdout } = await execPromise(`python3 "${tempFile}"`);
-      logger.info(`📄 Python script output: ${stdout}`);
       const angle = parseInt(stdout.trim(), 10);
       unlinkSync(tempFile);
 
@@ -253,6 +250,7 @@ sys.exit(1)`;
         logger.debug(`⚠️ DOA device not found: ${errorMessage.trim()}`);
       } else if (errorMessage.includes("ERROR:")) {
         logger.warn(`⚠️ DOA reading error: ${errorMessage.trim()}`);
+        logger.error(`🚨 Error: ${error?.message || error}`);
       } else {
         // Only log unexpected errors at warn level
         logger.debug(`⚠️ DOA reading failed: ${errorMessage.trim()}`);
