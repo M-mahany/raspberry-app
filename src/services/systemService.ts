@@ -809,8 +809,8 @@ export class SystemService {
       execSync(`sudo chmod 440 /etc/sudoers.d/${user}`);
 
       logger.info("✅ Passwordless sudo configured");
-    } catch (err) {
-      logger.warn("⚠️ Could not configure passwordless sudo");
+    } catch (err: any) {
+      logger.warn(`⚠️ Could not configure passwordless sudo: ${err}`);
     }
   }
 }
