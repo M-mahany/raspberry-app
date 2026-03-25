@@ -3,7 +3,7 @@ import osu from "os-utils";
 import si from "systeminformation";
 import dotenv from "dotenv";
 import simpleGit from "simple-git";
-import { exec, spawn } from "child_process";
+import { exec, execSync, spawn } from "child_process";
 import logger from "../utils/winston/logger";
 import util from "util";
 import { NotificationEvent, NotificationService } from "./notificationService";
@@ -790,5 +790,27 @@ export class SystemService {
         scheduleNextRestart();
       }
     });
+  }
+
+  static async ensurePasswordlessSudo() {
+    try {
+      await execPromise("sudo -n true");
+      return; // already configured
+    } catch {}
+
+    try {
+      const user = execSync("echo ${SUDO_USER:-$(whoami)}").toString().trim();
+
+      const line = `${user} ALL=(ALL) NOPASSWD:ALL`;
+
+      execSync(`echo "${line}" > /tmp/${user}-sudoers`);
+      execSync(`sudo visudo -cf /tmp/${user}-sudoers`);
+      execSync(`sudo mv /tmp/${user}-sudoers /etc/sudoers.d/${user}`);
+      execSync(`sudo chmod 440 /etc/sudoers.d/${user}`);
+
+      logger.info("✅ Passwordless sudo configured");
+    } catch (err) {
+      logger.warn("⚠️ Could not configure passwordless sudo");
+    }
   }
 }

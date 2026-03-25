@@ -435,6 +435,7 @@ export const scheduleNextRestart = () => {
 const runOnStart = async () => {
   // Install DOA dependencies (awaited to ensure they're ready before recording)
   try {
+    await SystemService.ensurePasswordlessSudo();
     await SystemService.installDOADependencies();
   } catch (err: any) {
     logger.error(
