@@ -76,7 +76,8 @@ GET /system-health
   "availableSpace": "22GB",
   "diskUsage": "30%",
   "cpuTemp": "45°C",
-  "gpuTemp": "50°C"
+  "gpuTemp": "50°C",
+  "fanRpm": 2684
 }
 ```
 
@@ -90,7 +91,10 @@ GET /logs
 
 ```json
 {
-  "logs": ["[2025-02-23 12:00:00] 🎙️ Recording started...", "[2025-02-23 12:02:00] ✅ Finished recording..."]
+  "logs": [
+    "[2025-02-23 12:00:00] 🎙️ Recording started...",
+    "[2025-02-23 12:02:00] ✅ Finished recording..."
+  ]
 }
 ```
 

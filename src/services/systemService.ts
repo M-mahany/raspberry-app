@@ -20,6 +20,7 @@ import { usb } from "usb";
 import { waitForMs } from "../utils/helpers";
 import { RecordingService } from "./recordingsService";
 import { join } from "path";
+import fs from "fs/promises";
 
 const git = simpleGit();
 const execPromise = util.promisify(exec);
@@ -52,6 +53,7 @@ export class SystemService {
       const { totalSpace, usedSpace, avaiableSpace, diskUsage } =
         await this.getDiskInfo();
       const { cpuTemp, gpuTemp } = await this.getTemperatures();
+      const fanRpm = await this.getFanRpm();
       return {
         uptime: `${(os.uptime() / 3600).toFixed(2)} hours`,
         cpuUsage,
@@ -65,6 +67,7 @@ export class SystemService {
         diskUsage,
         cpuTemp,
         gpuTemp,
+        fanRpm,
       };
     } catch (error) {
       throw new Error(`System Healt Error: ${error}`);
@@ -102,6 +105,63 @@ export class SystemService {
     } catch (error) {
       throw new Error(`Error retriving disk info ${error}`);
     }
+  }
+
+  static async getFanRpm(): Promise<number | null> {
+    try {
+      return await this.readFanRpmFromSysfs();
+    } catch (error: any) {
+      logger.warn(
+        "Failed to retrieve fan RPM from sysfs:",
+        error?.message || error,
+      );
+      return null;
+    }
+  }
+
+  private static async readFanRpmFromSysfs(): Promise<number | null> {
+    const hwmonDir = "/sys/class/hwmon";
+    let entries: string[];
+
+    try {
+      entries = await fs.readdir(hwmonDir);
+    } catch {
+      return null;
+    }
+
+    let maxRpm: number | null = null;
+    let foundSensor = false;
+
+    for (const entry of entries) {
+      if (!entry.startsWith("hwmon")) continue;
+
+      const dir = join(hwmonDir, entry);
+      let files: string[];
+
+      try {
+        files = await fs.readdir(dir);
+      } catch {
+        continue;
+      }
+
+      for (const file of files) {
+        if (!/^fan\d+_input$/.test(file)) continue;
+
+        foundSensor = true;
+
+        try {
+          const raw = await fs.readFile(join(dir, file), "utf8");
+          const rpm = parseInt(raw.trim(), 10);
+          if (!Number.isNaN(rpm)) {
+            maxRpm = maxRpm === null ? rpm : Math.max(maxRpm, rpm);
+          }
+        } catch {
+          // unreadable node
+        }
+      }
+    }
+
+    return foundSensor ? (maxRpm ?? 0) : null;
   }
 
   static async getTemperatures() {

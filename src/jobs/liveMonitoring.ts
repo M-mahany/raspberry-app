@@ -14,6 +14,7 @@ interface SystemHealthData {
   diskUsage: string;
   cpuTemp: string;
   gpuTemp: string;
+  fanRpm: number | null;
 }
 
 class SystemMonitor extends EventEmitter {
