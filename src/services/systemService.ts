@@ -41,7 +41,11 @@ let isCheckingSystemMic = {
 };
 
 let cpuReportedAT: number | null = null;
-const CPU_THRESHOLD = 70;
+const CPU_THRESHOLD = 100;
+
+const OFFICIAL_GIT_REPO_URL =
+  "https://github.com/Pythia-Scorecard/pythia-edge-app.git";
+const OFFICIAL_GIT_BRANCH = "main";
 
 let lastCycleTime: number | null = null;
 
@@ -240,22 +244,75 @@ export class SystemService {
     }
   }
 
+  static normalizeGitRemoteUrl(url: string): string {
+    let normalized = url.trim();
+
+    const sshMatch = normalized.match(/^git@github\.com:(.+)$/i);
+    if (sshMatch) {
+      normalized = `https://github.com/${sshMatch[1]}`;
+    }
+
+    normalized = normalized.replace(/\/+$/, "");
+    if (normalized.toLowerCase().endsWith(".git")) {
+      normalized = normalized.slice(0, -4);
+    }
+    normalized = normalized.replace(/\/+$/, "");
+
+    return normalized.toLowerCase();
+  }
+
+  static async ensureCanonicalGitRemote(): Promise<boolean> {
+    let currentRemote: string | void;
+
+    try {
+      currentRemote = await git.remote(["get-url", "origin"]);
+    } catch {
+      return false;
+    }
+
+    if (!currentRemote || typeof currentRemote !== "string") {
+      return false;
+    }
+
+    const normalizedCurrent = this.normalizeGitRemoteUrl(currentRemote);
+    const normalizedOfficial = this.normalizeGitRemoteUrl(
+      OFFICIAL_GIT_REPO_URL,
+    );
+
+    if (normalizedCurrent === normalizedOfficial) {
+      return false;
+    }
+
+    logger.info(
+      `🔄 Migrating git remote from ${currentRemote.trim()} to ${OFFICIAL_GIT_REPO_URL}`,
+    );
+    await git.remote(["set-url", "origin", OFFICIAL_GIT_REPO_URL]);
+    return true;
+  }
+
   static async checkForUpdates(): Promise<{ code: number; message: string }> {
     try {
       logger.info("🔍 Checking for updates...");
 
-      // Fetch latest changes
+      const migrated = await this.ensureCanonicalGitRemote();
+
       await git.fetch();
 
-      // Get local and remote commit hashes
       const localCommit = await git.revparse(["HEAD"]);
-      const remoteCommit = await git.revparse(["origin/main"]);
+      const remoteCommit = await git.revparse([
+        `origin/${OFFICIAL_GIT_BRANCH}`,
+      ]);
 
-      if (localCommit !== remoteCommit) {
-        logger.info("🚀 New updates found! Pulling latest changes...");
-
-        // Pull latest code
-        await git.pull("origin", "main");
+      if (migrated || localCommit !== remoteCommit) {
+        if (migrated) {
+          logger.info(
+            `🚀 Official repo migration detected. Syncing to origin/${OFFICIAL_GIT_BRANCH}...`,
+          );
+          await git.reset(["--hard", `origin/${OFFICIAL_GIT_BRANCH}`]);
+        } else {
+          logger.info("🚀 New updates found! Pulling latest changes...");
+          await git.pull("origin", OFFICIAL_GIT_BRANCH);
+        }
 
         // Check if package.json changed (to reinstall dependencies)
         // const changedFiles = await git.diffSummary(["HEAD~1"]);
